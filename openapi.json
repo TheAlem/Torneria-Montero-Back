@@ -1,0 +1,152 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Tornería Montero API",
+    "version": "1.0.0",
+    "description": "API para gestionar trabajos, clientes y trabajadores de Tornería Montero. Autenticación por header x-api-key."
+  },
+  "servers": [
+    { "url": "/", "description": "Local server" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key"
+      }
+    },
+    "schemas": {
+      "ClientAppAccount": {
+        "type": "object",
+        "properties": {
+          "appEmail": { "type": "string", "format": "email" },
+          "appPhone": { "type": "string" }
+        }
+      },
+      "Client": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "company": { "type": "string" },
+          "phone": { "type": "string" },
+          "email": { "type": "string" },
+          "address": { "type": "string" },
+          "appAccount": { "$ref": "#/components/schemas/ClientAppAccount" }
+        }
+      },
+      "Worker": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "fullName": { "type": "string" }
+        }
+      },
+      "JobCreate": {
+        "type": "object",
+        "required": ["code","workType","description","priority","estimatedDelivery","assignedWorker","paymentAmount","paymentStatus","dateCreated","clientName","clientPhone","clientAddress"],
+        "properties": {
+          "code": { "type": "string" },
+          "workType": { "type": "string" },
+          "description": { "type": "string" },
+          "priority": { "type": "string", "enum": ["Baja","Media","Alta"] },
+          "clientName": { "type": "string" },
+          "clientPhone": { "type": "string" },
+          "clientEmail": { "type": "string", "format": "email" },
+          "clientAddress": { "type": "string" },
+          "clientCompany": { "type": "string" },
+          "clientAppEmail": { "type": "string", "format": "email" },
+          "clientAppPhone": { "type": "string" },
+          "sendAppInstructions": { "type": "boolean" },
+          "estimatedDelivery": { "type": "string", "format": "date" },
+          "assignedWorker": { "type": "string" },
+          "paymentAmount": { "type": "string" },
+          "paymentStatus": { "type": "string", "enum": ["Pendiente","Pagado"] },
+          "materials": { "type": "string" },
+          "specifications": { "type": "string" },
+          "dateCreated": { "type": "string", "format": "date" }
+        }
+      },
+      "JobResponse": {
+        "type": "object",
+        "properties": {
+          "job": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "format": "uuid" },
+              "code": { "type": "string" },
+              "status": { "type": "string" },
+              "workType": { "type": "string" },
+              "priority": { "type": "string" },
+              "estimatedDelivery": { "type": "string", "format": "date" },
+              "paymentAmount": { "type": "string" },
+              "paymentStatus": { "type": "string" },
+              "materials": { "type": "string" },
+              "specifications": { "type": "string" },
+              "dateCreated": { "type": "string", "format": "date" },
+              "client": { "$ref": "#/components/schemas/Client" },
+              "assignedWorker": { "$ref": "#/components/schemas/Worker" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "security": [{ "ApiKeyAuth": [] }],
+  "paths": {
+    "/api/jobs": {
+      "post": {
+        "summary": "Crear un nuevo trabajo",
+        "security": [{ "ApiKeyAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/JobCreate" } }
+          }
+        },
+        "responses": {
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JobResponse" } } } },
+          "400": { "description": "Validation error" },
+          "401": { "description": "Missing/invalid API key" },
+          "404": { "description": "Worker not found" },
+          "409": { "description": "Code already exists" },
+          "500": { "description": "Server error" }
+        }
+      }
+    },
+    "/api/workers": {
+      "get": {
+        "summary": "Listar trabajadores activos",
+        "security": [{ "ApiKeyAuth": [] }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Worker" } } } } },
+          "401": { "description": "Missing/invalid API key" }
+        }
+      }
+    },
+    "/api/jobs/{code}": {
+      "get": {
+        "summary": "Obtener trabajo por código",
+        "security": [{ "ApiKeyAuth": [] }],
+        "parameters": [ { "name": "code", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JobResponse" } } } },
+          "401": { "description": "Missing/invalid API key" },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/api/clients": {
+      "get": {
+        "summary": "Buscar clientes (opcional query)",
+        "security": [{ "ApiKeyAuth": [] }],
+        "parameters": [ { "name": "query", "in": "query", "required": false, "schema": { "type": "string" } } ],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Client" } } } } },
+          "401": { "description": "Missing/invalid API key" }
+        }
+      }
+    }
+  }
+}

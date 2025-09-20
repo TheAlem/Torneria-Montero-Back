@@ -1,0 +1,92 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Priority {
+  BAJA
+  MEDIA
+  ALTA
+}
+
+enum PaymentStatus {
+  PENDIENTE
+  PAGADO
+}
+
+enum JobStatus {
+  PENDIENTE
+  EN_PROCESO
+  TERMINADO
+  ENTREGADO
+}
+
+model Client {
+  id        String             @id @default(uuid())
+  name      String
+  company   String?
+  phone     String
+  email     String?            @unique
+  address   String
+  appAccount ClientAppAccount?
+  jobs      Job[]
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([phone], name: "idx_clients_phone")
+  @@index([email], name: "idx_clients_email")
+}
+
+model ClientAppAccount {
+  id        String   @id @default(uuid())
+  client    Client   @relation(fields: [clientId], references: [id])
+  clientId  String   @unique
+  appEmail  String?  @unique
+  appPhone  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Worker {
+  id        String   @id @default(uuid())
+  fullName  String   @unique
+  active    Boolean  @default(true)
+  jobs      Job[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Job {
+  id                String        @id @default(uuid())
+  code              String        @unique
+  client            Client        @relation(fields: [clientId], references: [id])
+  clientId          String
+  workType          String
+  description       String
+  priority          Priority      @default(MEDIA)
+  estimatedDelivery DateTime
+  assignedWorker    Worker        @relation(fields: [assignedWorkerId], references: [id])
+  assignedWorkerId  String
+  paymentAmount     Decimal       @db.Decimal(12, 2)
+  paymentStatus     PaymentStatus @default(PENDIENTE)
+  materials         String?
+  specifications    String?
+  status            JobStatus     @default(PENDIENTE)
+  dateCreated       DateTime
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([clientId])
+  @@index([assignedWorkerId])
+}
