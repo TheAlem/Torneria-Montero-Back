@@ -14,8 +14,18 @@ function mapPaymentStatus(p: string) {
 }
 
 export async function createFromForm(payload: CreateJobBody) {
-  // normalize
-  const code = payload.code.trim();
+  // generate or normalize code
+  let code = payload.code?.trim();
+  if (!code) {
+    // generate a predictable code: P-<YYYYMMDD>-<timestamp>-<4digits>
+    const date = new Date();
+    const yyyy = date.getFullYear().toString();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    const ts = Date.now();
+    const rand = Math.floor(Math.random() * 9000) + 1000; // 4 digits
+    code = `P-${yyyy}${mm}${dd}-${ts}-${rand}`;
+  }
   const assignedWorkerName = payload.assignedWorker.trim();
 
   // check worker
@@ -64,8 +74,19 @@ export async function createFromForm(payload: CreateJobBody) {
     }
 
     // create job
+    // ensure uniqueness: if collision (very unlikely), retry a few times
+    let attempts = 0;
+    while (attempts < 5) {
+      const existing = await tx.job.findUnique({ where: { code } });
+      if (!existing) break;
+      // collision -> regenerate
+      const ts = Date.now();
+      const rand = Math.floor(Math.random() * 9000) + 1000;
+      code = `P-${ts}-${rand}`;
+      attempts += 1;
+    }
     const existing = await tx.job.findUnique({ where: { code } });
-    if (existing) throw { status: 409, message: 'Job code already exists' };
+    if (existing) throw { status: 409, message: 'Job code already exists after retries' };
 
     const job = await tx.job.create({ data: {
       code,

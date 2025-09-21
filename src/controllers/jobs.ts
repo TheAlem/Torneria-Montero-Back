@@ -18,7 +18,8 @@ export const createJob = async (req: Request, res: Response, next: NextFunction)
 export const getJobByCode = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const code = req.params.code;
-    const job = await (await import('../prisma/client.js')).prisma.job.findUnique({ where: { code }, include: { client: { include: { appAccount: true } }, assignedWorker: true } });
+    if (!code) return res.status(400).json({ error: 'code required' });
+    const job = await prisma.job.findFirst({ where: { code }, include: { client: { include: { appAccount: true } }, assignedWorker: true } });
     if (!job) return res.status(404).json({ error: 'Not found' });
     res.json({ job });
   } catch (err) { next(err); }

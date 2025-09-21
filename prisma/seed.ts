@@ -1,4 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+// Import the generated Prisma Client directly to avoid runtime init issues
+import { PrismaClient } from '../generated/prisma/index.js';
 const prisma = new PrismaClient();
 
 async function main() {
@@ -7,10 +8,13 @@ async function main() {
     await prisma.worker.upsert({ where: { fullName: w }, update: {}, create: { fullName: w } });
   }
 
-  // sample client
-  await prisma.client.upsert({ where: { phone: '+59177711122' }, update: {}, create: {
-    name: 'Industrias ABC', phone: '+59177711122', address: 'Calle Falsa 123', company: 'Industrias ABC', email: 'contacto@industriasabc.com'
-  }});
+  // sample client (phone is not unique in schema, so use findFirst/create)
+  const existingClient = await prisma.client.findFirst({ where: { phone: '+59177711122' } });
+  if (!existingClient) {
+    await prisma.client.create({ data: {
+      name: 'Industrias ABC', phone: '+59177711122', address: 'Calle Falsa 123', company: 'Industrias ABC', email: 'contacto@industriasabc.com'
+    }});
+  }
 }
 
 main().then(()=>{ console.log('Seed done'); process.exit(0); }).catch(e=>{ console.error(e); process.exit(1); });
