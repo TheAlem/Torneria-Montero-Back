@@ -12,7 +12,7 @@ export const asignar = async (req: Request, res: Response, next: NextFunction) =
 
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
   try {
-  const jobs = await prisma.job.findMany({ include: { client: true, assignedWorker: true }, orderBy: { dateCreated: 'desc' } });
+    const jobs = await prisma.job.findMany({ include: { client: true, assignedWorker: true }, orderBy: { createdAt: 'desc' } });
   const assignments = jobs.filter(j => j.assignedWorkerId !== null);
   res.json(assignments);
   } catch (err) { next(err); }

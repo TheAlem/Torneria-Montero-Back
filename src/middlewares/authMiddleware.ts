@@ -15,7 +15,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       return res.status(500).json({ error: 'Server misconfiguration: JWT_SECRET missing' });
     }
   const payload = (jwt as any).verify(token, JWT_SECRET);
-    const profile = await prisma.profile.findUnique({ where: { id: payload.id } });
+    const profile = await prisma.user.findUnique({ where: { id: payload.id } });
     if (!profile) return res.status(401).json({ error: 'User not found' });
     (req as any).user = { id: profile.id, role: profile.role, email: profile.email };
     next();

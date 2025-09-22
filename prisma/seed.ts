@@ -5,7 +5,10 @@ const prisma = new PrismaClient();
 async function main() {
   const workers = ['Juan Pérez','María Roca','Carlos Ruiz','Ana Martín'];
   for (const w of workers) {
-    await prisma.worker.upsert({ where: { fullName: w }, update: {}, create: { fullName: w } });
+    const existingWorker = await prisma.worker.findFirst({ where: { fullName: w } });
+    if (!existingWorker) {
+      await prisma.worker.create({ data: { fullName: w } });
+    }
   }
 
   // sample client (phone is not unique in schema, so use findFirst/create)

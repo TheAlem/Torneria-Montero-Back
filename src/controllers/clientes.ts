@@ -23,7 +23,7 @@ export const crear = async (req: Request, res: Response, next: NextFunction) => 
 export const obtener = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = req.params.id as string;
-    const client = await prisma.client.findUnique({ where: { id }, include: { jobs: true, appAccount: true } });
+        const client = await prisma.client.findUnique({ where: { id }, include: { jobs: true } });
     if (!client) return res.status(404).json({ error: 'Not found' });
     res.json(client);
   } catch (err) { next(err); }

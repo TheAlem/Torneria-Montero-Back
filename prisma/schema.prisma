@@ -1,8 +1,4 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Prisma schema actualizado para Tornería Montero
 
 generator client {
   provider = "prisma-client-js"
@@ -14,6 +10,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/* ========================
+   ENUMS
+   ======================== */
 enum Priority {
   BAJA
   MEDIA
@@ -23,6 +22,8 @@ enum Priority {
 enum PaymentStatus {
   PENDIENTE
   PAGADO
+  FALLIDO
+  REEMBOLSADO
 }
 
 enum JobStatus {
@@ -32,199 +33,120 @@ enum JobStatus {
   ENTREGADO
 }
 
-model Client {
-  id        String             @id @default(uuid())
-  name      String
-  company   String?
-  phone     String
-  email     String?            @unique
-  address   String
-  appAccount ClientAppAccount?
-  jobs      Job[]
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
-  // relations
-  attachments Attachment[]
-  notifications NotificationsOutbox[]
-
-  @@index([phone], name: "idx_clients_phone")
-  @@index([email], name: "idx_clients_email")
-}
-
-model ClientAppAccount {
-  id        String   @id @default(uuid())
-  client    Client   @relation(fields: [clientId], references: [id])
-  clientId  String   @unique
-  appEmail  String?  @unique
-  appPhone  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Worker {
-  id        String   @id @default(uuid())
-  fullName  String   @unique
-  active    Boolean  @default(true)
-  jobs      Job[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-// Profiles / users for authentication (email/password)
-model Profile {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  role      String   @default("cliente")
-  nombre    String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-enum UserRole {
-  ADMIN
-  TORNERO
-  APOYO
-}
-
 enum PaymentMethod {
   QR
   EFECTIVO
   TRANSFERENCIA
 }
 
-enum NotificationChannel {
-  EMAIL
-  SMS
-  PUSH
+enum UserRole {
+  ADMIN
+  TORNERO
+  CLIENTE
 }
 
-enum NotificationStatus {
-  PENDIENTE
-  ENVIADO
-  FALLIDO
+/* ========================
+   MODELOS
+   ======================== */
+
+model Client {
+  id        String   @id @default(uuid())
+  name      String
+  company   String?
+  phone     String
+  email     String?  @unique
+  address   String?
+  jobs      Job[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([phone], name: "idx_clients_phone")
+  @@index([email], name: "idx_clients_email")
 }
 
 model User {
   id        String   @id @default(uuid())
-  fullName  String   @map("full_name")
+  fullName  String
+  password  String
   email     String?  @unique
   phone     String?
-  role      UserRole @default(TORNERO)
+  role      UserRole @default(CLIENTE)
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  // relations
+
+  // Relaciones
   jobStatusChanges JobStatusHistory[]
-  uploadedAttachments Attachment[]
-  auditLogs AuditLog[]
 }
 
-model JobStatusHistory {
-  id         String   @id @default(uuid())
-  job        Job      @relation(fields: [jobId], references: [id])
-  jobId      String
-  oldStatus  JobStatus?
-  newStatus  JobStatus
-  note       String?
-  changedBy  User?    @relation(fields: [changedById], references: [id])
-  changedById String?
-  changedAt  DateTime @default(now())
-}
-
-model JobMaterials {
+model Worker {
   id        String   @id @default(uuid())
-  job       Job      @relation(fields: [jobId], references: [id])
-  jobId     String
-  itemName  String   @map("item_name")
-  qty       Float?
-  unit      String?
-  notes     String?
+  fullName  String
+  specialty String?
+  phone     String?
+  active    Boolean  @default(true)
+  jobs      Job[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-}
-
-model Attachment {
-  id         String   @id @default(uuid())
-  job        Job?     @relation(fields: [jobId], references: [id])
-  jobId      String?
-  client     Client?  @relation(fields: [clientId], references: [id])
-  clientId   String?
-  url        String
-  kind       String?
-  uploadedBy User?    @relation(fields: [uploadedById], references: [id])
-  uploadedById String?
-  uploadedAt DateTime @default(now())
-  notes      String?
-}
-
-model Payment {
-  id          String   @id @default(uuid())
-  job         Job      @relation(fields: [jobId], references: [id])
-  jobId       String
-  amount      Decimal  @db.Decimal(12,2)
-  method      PaymentMethod
-  isAdvance   Boolean  @default(false)
-  paidAt      DateTime @default(now())
-  // Verification will be handled by the payment gateway; store reference instead
-  gatewayReference String?
-  gatewayStatus    String?
-  notes       String?
-}
-
-model NotificationsOutbox {
-  id        String              @id @default(uuid())
-  job       Job?                @relation(fields: [jobId], references: [id])
-  jobId     String?
-  client    Client?             @relation(fields: [clientId], references: [id])
-  clientId  String?
-  channel   NotificationChannel
-  status    NotificationStatus  @default(PENDIENTE)
-  payload   Json
-  errorMessage String?
-  createdAt DateTime            @default(now())
-  sentAt    DateTime?
-}
-
-
-model AuditLog {
-  id         String   @id @default(uuid())
-  actorUser  User?    @relation(fields: [actorUserId], references: [id])
-  actorUserId String?
-  action     String
-  entityType String
-  entityId   String?
-  metadata   Json?
-  createdAt  DateTime @default(now())
 }
 
 model Job {
   id                String        @id @default(uuid())
   code              String        @unique
-  client            Client        @relation(fields: [clientId], references: [id])
-  clientId          String
-  workType          String
+  title             String
   description       String
-  priority          Priority      @default(MEDIA)
-  estimatedDelivery DateTime
-  assignedWorker    Worker        @relation(fields: [assignedWorkerId], references: [id])
+  clientId          String
+  client            Client        @relation(fields: [clientId], references: [id])
   assignedWorkerId  String
-  paymentAmount     Decimal       @db.Decimal(12, 2)
-  paymentStatus     PaymentStatus @default(PENDIENTE)
-  materials         String?
-  specifications    String?
+  assignedWorker    Worker        @relation(fields: [assignedWorkerId], references: [id])
+  priority          Priority      @default(MEDIA)
   status            JobStatus     @default(PENDIENTE)
-  dateCreated       DateTime      @default(now())  
+  estimatedHours    Float?
+  estimatedDelivery DateTime?
+  price             Decimal       @db.Decimal(12, 2)
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  // relations
+  // Relaciones
   statusHistory JobStatusHistory[]
-  jobMaterials  JobMaterials[]
-  attachments   Attachment[]
   payments      Payment[]
-  notifications NotificationsOutbox[]
+  transaction   GatewayTransaction?
 
   @@index([status, priority, estimatedDelivery], name: "idx_job_kanban_main")
   @@index([updatedAt], name: "idx_job_updated_at")
+}
+
+model JobStatusHistory {
+  id         String   @id @default(uuid())
+  jobId      String
+  job        Job      @relation(fields: [jobId], references: [id])
+  oldStatus  JobStatus?
+  newStatus  JobStatus
+  changedById String?
+  changedBy   User?    @relation(fields: [changedById], references: [id])
+  changedAt  DateTime @default(now())
+}
+
+model Payment {
+  id          String        @id @default(uuid())
+  jobId       String
+  job         Job           @relation(fields: [jobId], references: [id])
+  amount      Decimal       @db.Decimal(12, 2)
+  method      PaymentMethod
+  status      PaymentStatus @default(PENDIENTE)
+  createdAt   DateTime      @default(now())
+}
+
+model GatewayTransaction {
+  id          String        @id @default(uuid())
+  jobId       String        @unique
+  job         Job           @relation(fields: [jobId], references: [id])
+  provider    String
+  externalId  String        @unique
+  qrUrl       String
+  amount      Decimal       @db.Decimal(12, 2)
+  status      PaymentStatus @default(PENDIENTE)
+  payload     Json
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 }

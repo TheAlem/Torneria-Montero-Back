@@ -5,7 +5,7 @@ import * as JobService from '../services/jobService.js';
 // In this codebase 'Job' represents trabajos. Keep an alias for readability.
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const jobs = await prisma.job.findMany({ include: { client: true, assignedWorker: true }, orderBy: { dateCreated: 'desc' } });
+    const jobs = await prisma.job.findMany({ include: { client: true, assignedWorker: true }, orderBy: { description: 'desc' } });
     res.json(jobs);
   } catch (err) { next(err); }
 };
@@ -34,7 +34,7 @@ export const crear = async (req: Request, res: Response, next: NextFunction) => 
       specifications: req.body.specifications,
       dateCreated: req.body.dateCreated || new Date().toISOString().slice(0,10)
     } as any;
-    const job = await JobService.createFromForm(body);
+        const job = await JobService.createJob(body);
     res.status(201).json(job);
   } catch (err) { next(err); }
 };

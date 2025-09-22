@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import errorHandler from './middlewares/errorHandler.js';
@@ -15,6 +14,7 @@ import asignacionesRoutes from './routes/asignaciones.js';
 import reportesRoutes from './routes/reportes.js';
 import authRoutes from './routes/auth.js';
 import jobsRoutes from './routes/jobs.js';
+import kanbanRoutes from './routes/kanban.js';
 
 const app = express();
  
@@ -29,6 +29,7 @@ app.use('/pedidos', pedidosRoutes);
 app.use('/trabajadores', trabajadoresRoutes);
 app.use('/asignar', asignacionesRoutes);
 app.use('/reportes', reportesRoutes);
+app.use('/kanban', kanbanRoutes);
 
 // Swagger UI
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapi));

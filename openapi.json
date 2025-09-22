@@ -8,6 +8,11 @@
   "servers": [
     { "url": "/", "description": "Local server" }
   ],
+  "tags": [
+    { "name": "Jobs", "description": "Operaciones de Trabajos" },
+    { "name": "Kanban", "description": "Operaciones para el tablero Kanban" },
+    { "name": "Auth", "description": "Autenticación de usuarios" }
+  ],
   "components": {
     "securitySchemes": {
       "ApiKeyAuth": {
@@ -17,6 +22,45 @@
       }
     },
     "schemas": {
+      "AuthRegisterRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string" },
+          "role": { "type": "string", "enum": ["admin", "worker", "client"], "default": "client" },
+          "nombre": { "type": "string" }
+        }
+      },
+      "AuthLoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string" }
+        }
+      },
+      "AuthProfile": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "email": { "type": "string", "format": "email" },
+          "role": { "type": "string", "enum": ["admin", "worker", "client"] }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "token": { "type": "string" },
+          "profile": { "$ref": "#/components/schemas/AuthProfile" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" }
+        }
+      },
       "ClientAppAccount": {
         "type": "object",
         "properties": {
@@ -45,12 +89,25 @@
       },
       "JobCreate": {
         "type": "object",
-        "required": ["code","workType","description","priority","estimatedDelivery","assignedWorker","paymentAmount","paymentStatus","dateCreated","clientName","clientPhone","clientAddress"],
+        "required": [
+          "code",
+          "workType",
+          "description",
+          "priority",
+          "estimatedDelivery",
+          "assignedWorker",
+          "paymentAmount",
+          "paymentStatus",
+          "dateCreated",
+          "clientName",
+          "clientPhone",
+          "clientAddress"
+        ],
         "properties": {
           "code": { "type": "string" },
           "workType": { "type": "string" },
           "description": { "type": "string" },
-          "priority": { "type": "string", "enum": ["Baja","Media","Alta"] },
+          "priority": { "type": "string", "enum": ["Baja", "Media", "Alta"] },
           "clientName": { "type": "string" },
           "clientPhone": { "type": "string" },
           "clientEmail": { "type": "string", "format": "email" },
@@ -62,7 +119,7 @@
           "estimatedDelivery": { "type": "string", "format": "date" },
           "assignedWorker": { "type": "string" },
           "paymentAmount": { "type": "string" },
-          "paymentStatus": { "type": "string", "enum": ["Pendiente","Pagado"] },
+          "paymentStatus": { "type": "string", "enum": ["Pendiente", "Pagado"] },
           "materials": { "type": "string" },
           "specifications": { "type": "string" },
           "dateCreated": { "type": "string", "format": "date" }
@@ -76,12 +133,12 @@
             "properties": {
               "id": { "type": "string", "format": "uuid" },
               "code": { "type": "string" },
-              "status": { "type": "string" },
+              "status": { "type": "string", "enum": ["PENDIENTE", "EN_PROCESO", "TERMINADO", "ENTREGADO"] },
               "workType": { "type": "string" },
-              "priority": { "type": "string" },
+              "priority": { "type": "string", "enum": ["BAJA", "MEDIA", "ALTA"] },
               "estimatedDelivery": { "type": "string", "format": "date" },
               "paymentAmount": { "type": "string" },
-              "paymentStatus": { "type": "string" },
+              "paymentStatus": { "type": "string", "enum": ["PENDIENTE", "PAGADO"] },
               "materials": { "type": "string" },
               "specifications": { "type": "string" },
               "dateCreated": { "type": "string", "format": "date" },
@@ -90,6 +147,68 @@
             }
           }
         }
+      },
+      "KanbanCardClient": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "phone": { "type": "string" }
+        }
+      },
+      "KanbanCardWorker": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "fullName": { "type": "string" }
+        }
+      },
+      "KanbanCard": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "code": { "type": "string" },
+          "description": { "type": "string" },
+          "workType": { "type": "string" },
+          "priority": { "type": "string", "enum": ["BAJA", "MEDIA", "ALTA"] },
+          "status": { "type": "string", "enum": ["PENDIENTE", "EN_PROCESO", "TERMINADO", "ENTREGADO"] },
+          "paymentStatus": { "type": "string", "enum": ["PENDIENTE", "PAGADO"] },
+          "estimatedDelivery": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "client": { "$ref": "#/components/schemas/KanbanCardClient" },
+          "assignedWorker": { "$ref": "#/components/schemas/KanbanCardWorker" },
+          "_count": {
+            "type": "object",
+            "properties": {
+              "attachments": { "type": "integer" },
+              "payments": { "type": "integer" }
+            }
+          }
+        }
+      },
+      "KanbanColumns": {
+        "type": "object",
+        "properties": {
+          "columns": {
+            "type": "object",
+            "properties": {
+              "PENDIENTE": { "type": "array", "items": { "$ref": "#/components/schemas/KanbanCard" } },
+              "EN_PROCESO": { "type": "array", "items": { "$ref": "#/components/schemas/KanbanCard" } },
+              "TERMINADO": { "type": "array", "items": { "$ref": "#/components/schemas/KanbanCard" } },
+              "ENTREGADO": { "type": "array", "items": { "$ref": "#/components/schemas/KanbanCard" } }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "ChangeStatusRequest": {
+        "type": "object",
+        "required": ["newStatus"],
+        "properties": {
+          "newStatus": { "type": "string", "enum": ["PENDIENTE", "EN_PROCESO", "TERMINADO", "ENTREGADO"] },
+          "note": { "type": "string" },
+          "userId": { "type": "string", "format": "uuid" }
+        }
       }
     }
   },
@@ -97,6 +216,7 @@
   "paths": {
     "/api/jobs": {
       "post": {
+        "tags": ["Jobs"],
         "summary": "Crear un nuevo trabajo",
         "security": [{ "ApiKeyAuth": [] }],
         "requestBody": {
@@ -106,7 +226,12 @@
           }
         },
         "responses": {
-          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JobResponse" } } } },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/JobResponse" } }
+            }
+          },
           "400": { "description": "Validation error" },
           "401": { "description": "Missing/invalid API key" },
           "404": { "description": "Worker not found" },
@@ -117,21 +242,37 @@
     },
     "/api/workers": {
       "get": {
+        "tags": ["Jobs"],
         "summary": "Listar trabajadores activos",
         "security": [{ "ApiKeyAuth": [] }],
         "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Worker" } } } } },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Worker" } }
+              }
+            }
+          },
           "401": { "description": "Missing/invalid API key" }
         }
       }
     },
     "/api/jobs/{code}": {
       "get": {
+        "tags": ["Jobs"],
         "summary": "Obtener trabajo por código",
         "security": [{ "ApiKeyAuth": [] }],
-        "parameters": [ { "name": "code", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "parameters": [
+          { "name": "code", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
         "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JobResponse" } } } },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/JobResponse" } }
+            }
+          },
           "401": { "description": "Missing/invalid API key" },
           "404": { "description": "Not found" }
         }
@@ -139,12 +280,150 @@
     },
     "/api/clients": {
       "get": {
+        "tags": ["Jobs"],
         "summary": "Buscar clientes (opcional query)",
         "security": [{ "ApiKeyAuth": [] }],
-        "parameters": [ { "name": "query", "in": "query", "required": false, "schema": { "type": "string" } } ],
+        "parameters": [
+          { "name": "query", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
         "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Client" } } } } },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Client" } }
+              }
+            }
+          },
           "401": { "description": "Missing/invalid API key" }
+        }
+      }
+    },
+    "/kanban": {
+      "get": {
+        "tags": ["Kanban"],
+        "summary": "Listar trabajos para el tablero Kanban",
+        "security": [{ "ApiKeyAuth": [] }],
+        "parameters": [
+          { "name": "q", "in": "query", "description": "Término de búsqueda en código, descripción, cliente y trabajador", "schema": { "type": "string" } },
+          { "name": "workerId", "in": "query", "description": "Filtrar por ID de trabajador", "schema": { "type": "string", "format": "uuid" } },
+          { "name": "clientId", "in": "query", "description": "Filtrar por ID de cliente", "schema": { "type": "string", "format": "uuid" } },
+          { "name": "priority", "in": "query", "description": "Filtrar por prioridad", "schema": { "type": "string", "enum": ["BAJA", "MEDIA", "ALTA"] } },
+          { "name": "limit", "in": "query", "description": "Límite de tarjetas por columna (default 50, max 200)", "schema": { "type": "integer", "default": 50, "minimum": 1, "maximum": 200 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/KanbanColumns" } }
+            }
+          },
+          "401": { "description": "Missing/invalid API key" }
+        }
+      }
+    },
+    "/kanban/{id}/status": {
+      "patch": {
+        "tags": ["Kanban"],
+        "summary": "Cambiar el estado de un trabajo",
+        "security": [{ "ApiKeyAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "ID del trabajo a actualizar", "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ChangeStatusRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Estado actualizado correctamente",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "job": { "$ref": "#/components/schemas/KanbanCard" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Parámetros inválidos (ej. newStatus incorrecto)" },
+          "401": { "description": "Missing/invalid API key" },
+          "404": { "description": "Trabajo no encontrado" }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Registrar un nuevo usuario",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/AuthRegisterRequest" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Usuario registrado exitosamente",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AuthResponse" } }
+            }
+          },
+          "400": {
+            "description": "Email y password requeridos",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
+            }
+          },
+          "409": {
+            "description": "Email en uso",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Iniciar sesión de usuario",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/AuthLoginRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Inicio de sesión exitoso",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AuthResponse" } }
+            }
+          },
+          "401": {
+            "description": "Credenciales inválidas",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
+            }
+          }
         }
       }
     }

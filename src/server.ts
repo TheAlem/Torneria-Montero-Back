@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 // When running via ts-node/esm import the compiled JS path
 import app from './app.js';
 
