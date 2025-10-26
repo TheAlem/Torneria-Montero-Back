@@ -42,14 +42,28 @@ export const listarKanban = async (req: Request, res: Response, next: NextFuncti
       };
       baseWhere.AND.push(searchQuery);
     }
+    // Normalizar posibles variantes del enum (evita fallos por typos o migraciones inconsistentes)
+    const normalizeEstado = (s: string) => {
+      if (!s) return s;
+      const map: Record<string, string> = {
+        'EN_PROCESO': 'EN_PROGRESO', // posible valor en migraciones antiguas
+        'EN_PROGRESO': 'EN_PROGRESO',
+        'PENDIENTE': 'PENDIENTE',
+        'QA': 'QA',
+        'ENTREGADO': 'ENTREGADO',
+        'ASIGNADO': 'ASIGNADO'
+      };
+      return map[s] ?? s;
+    };
+
     const [pending, inProgress, qa, delivered] = await Promise.all([
-      prisma.pedidos.findMany({ where: { ...baseWhere, estado: 'PENDIENTE' }, select: kanbanCardSelect, orderBy: [{ prioridad: 'desc' }, { fecha_actualizacion: 'desc' }], take: parsedLimit }),
-      prisma.pedidos.findMany({ where: { ...baseWhere, estado: 'EN_PROCESO' }, select: kanbanCardSelect, orderBy: [{ prioridad: 'desc' }, { fecha_actualizacion: 'desc' }], take: parsedLimit }),
-      prisma.pedidos.findMany({ where: { ...baseWhere, estado: 'QA' }, select: kanbanCardSelect, orderBy: { fecha_actualizacion: 'desc' }, take: parsedLimit }),
-      prisma.pedidos.findMany({ where: { ...baseWhere, estado: 'ENTREGADO' }, select: kanbanCardSelect, orderBy: { fecha_actualizacion: 'desc' }, take: parsedLimit }),
+      prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('PENDIENTE') }, select: kanbanCardSelect, orderBy: [{ prioridad: 'desc' }, { fecha_actualizacion: 'desc' }], take: parsedLimit }),
+      prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('EN_PROGRESO') }, select: kanbanCardSelect, orderBy: [{ prioridad: 'desc' }, { fecha_actualizacion: 'desc' }], take: parsedLimit }),
+      prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('QA') }, select: kanbanCardSelect, orderBy: { fecha_actualizacion: 'desc' }, take: parsedLimit }),
+      prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('ENTREGADO') }, select: kanbanCardSelect, orderBy: { fecha_actualizacion: 'desc' }, take: parsedLimit }),
     ]);
 
-  return success(res, { columns: { PENDIENTE: pending, EN_PROCESO: inProgress, QA: qa, ENTREGADO: delivered } });
+  return success(res, { columns: { PENDIENTE: pending, EN_PROGRESO: inProgress, QA: qa, ENTREGADO: delivered } });
   } catch (err) {
     next(err);
   }

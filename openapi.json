@@ -328,7 +328,7 @@
             "type": "object",
             "properties": {
               "PENDIENTE": { "type": "array", "items": { "$ref": "#/components/schemas/KanbanCard" } },
-              "EN_PROCESO": { "type": "array", "items": { "$ref": "#/components/schemas/KanbanCard" } },
+              "EN_PROGRESO": { "type": "array", "items": { "$ref": "#/components/schemas/KanbanCard" } },
               "TERMINADO": { "type": "array", "items": { "$ref": "#/components/schemas/KanbanCard" } },
               "ENTREGADO": { "type": "array", "items": { "$ref": "#/components/schemas/KanbanCard" } }
             },
