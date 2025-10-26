@@ -9,144 +9,245 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-
 /* ========================
    ENUMS
    ======================== */
-enum Priority {
+
+enum RolUsuario {
+  CLIENTE
+  TORNERO
+  ADMIN
+}
+
+enum EstadoPedido {
+  PENDIENTE
+  ASIGNADO
+  EN_PROGRESO
+  QA
+  ENTREGADO
+}
+
+enum Prioridad {
   BAJA
   MEDIA
   ALTA
 }
 
-enum PaymentStatus {
-  PENDIENTE
-  PAGADO
-  FALLIDO
-  REEMBOLSADO
+enum Semaforo {
+  VERDE
+  AMARILLO
+  ROJO
 }
 
-enum JobStatus {
-  PENDIENTE
-  EN_PROCESO
-  TERMINADO
-  ENTREGADO
+enum OrigenAsignacion {
+  MANUAL
+  SUGERIDO
 }
 
-enum PaymentMethod {
-  QR
-  EFECTIVO
-  TRANSFERENCIA
+enum TipoNotificacion {
+  INFO
+  ALERTA
+  ENTREGA
 }
 
-enum UserRole {
-  ADMIN
-  TORNERO
-  CLIENTE
+enum SeveridadAlerta {
+  VERDE
+  AMARILLO
+  ROJO
+}
+
+enum EstadoTiempo {
+  ABIERTO
+  PAUSADO
+  CERRADO
 }
 
 /* ========================
-   MODELOS
+   MODELOS (equivalente a las tablas SQL que has propuesto)
+   - IDs como Int autoincrement (SERIAL)
+   - Duraciones se almacenan como segundos (Int)
+   - Campos JSONB -> Json
+   - Arrays de texto -> String[]
    ======================== */
 
-model Client {
-  id        String   @id @default(uuid())
-  name      String
-  company   String?
-  phone     String
-  email     String?  @unique
-  address   String?
-  jobs      Job[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model usuarios {
+  id              Int      @id @default(autoincrement())
+  nombre          String   @db.VarChar(100)
+  email           String   @unique @db.VarChar(100)
+  telefono        String?  @db.VarChar(20)
+  password_hash   String
+  rol             RolUsuario
+  estado          String   @default("Activo") @db.VarChar(20)
+  fecha_creacion  DateTime @default(now())
+  ultimo_acceso   DateTime?
 
-  @@index([phone], name: "idx_clients_phone")
-  @@index([email], name: "idx_clients_email")
+  // Relaciones 1-1
+  trabajador      trabajadores? @relation("UsuarioTrabajador")
+  cliente         clientes? @relation("UsuarioCliente")
+
+  // Relaciones inversas / de actividad
+  creadoPedidos        pedidos[] @relation("creador")
+  actualizadoPedidos   pedidos[] @relation("actualizador")
+  tiemposRegistrados   tiempos[]
+  reportesGenerados    reportes[]
 }
 
-model User {
-  id        String   @id @default(uuid())
-  fullName  String
-  password  String
-  email     String?  @unique
-  phone     String?
-  role      UserRole @default(CLIENTE)
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model trabajadores {
+  id               Int     @id @default(autoincrement())
+  usuario_id       Int     @unique
+  usuario          usuarios @relation("UsuarioTrabajador", fields: [usuario_id], references: [id], onDelete: Cascade)
+  ci               String  @unique @db.VarChar(20)
+  direccion        String?
+  rol_tecnico      String? @db.VarChar(50)
+  estado           String  @default("Activo") @db.VarChar(20)
+  fecha_ingreso    DateTime?
+  skills           Json?
+  disponibilidad   Json?
+  carga_actual     Int     @default(0)
+  notas            String?
 
-  // Relaciones
-  jobStatusChanges JobStatusHistory[]
+  pedidosResponsable pedidos[] @relation("responsable")
+  asignaciones       asignaciones[]
+  tiempos            tiempos[]
+  predicciones       predicciones_tiempo[]
 }
 
-model Worker {
-  id        String   @id @default(uuid())
-  fullName  String
-  specialty String?
-  phone     String?
-  active    Boolean  @default(true)
-  jobs      Job[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model clientes {
+  id             Int      @id @default(autoincrement())
+  usuario_id     Int?     @unique
+  usuario        usuarios? @relation("UsuarioCliente", fields: [usuario_id], references: [id], onDelete: SetNull)
+  nombre         String   @db.VarChar(120)
+  ci_rut         String?  @unique @db.VarChar(20)
+  email          String?  @db.VarChar(100)
+  telefono       String?  @db.VarChar(20)
+  direccion      String?
+  estado         String   @default("Activo") @db.VarChar(20)
+  fecha_registro DateTime @default(now())
+  device_id      String?
+  origen         String   @default("QR") @db.VarChar(30)
+  verificado     Boolean  @default(false)
+
+  pedidos        pedidos[]
+  notificaciones  notificaciones[]
 }
 
-model Job {
-  id                String        @id @default(uuid())
-  code              String        @unique
-  title             String
-  description       String
-  clientId          String
-  client            Client        @relation(fields: [clientId], references: [id])
-  assignedWorkerId  String
-  assignedWorker    Worker        @relation(fields: [assignedWorkerId], references: [id])
-  priority          Priority      @default(MEDIA)
-  status            JobStatus     @default(PENDIENTE)
-  estimatedHours    Float?
-  estimatedDelivery DateTime?
-  price             Decimal       @db.Decimal(12, 2)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+model pedidos {
+  id                   Int       @id @default(autoincrement())
+  cliente_id           Int
+  cliente              clientes  @relation(fields: [cliente_id], references: [id])
+  descripcion          String
+  prioridad            Prioridad @default(MEDIA)
+  precio               Decimal?  @db.Decimal(10,2)
+  fecha_inicio         DateTime  @default(now())
+  fecha_estimada_fin   DateTime?
+  estado               EstadoPedido @default(PENDIENTE)
+  responsable_id       Int? 
+  responsable          trabajadores? @relation("responsable", fields: [responsable_id], references: [id])
+  semaforo             Semaforo  @default(VERDE)
+  notas                String?
+  adjuntos             String[]
+  tiempo_estimado_sec  Int?
+  tiempo_real_sec      Int?
+  creado_por_id        Int?
+  creado_por           usuarios? @relation("creador", fields: [creado_por_id], references: [id])
+  actualizado_por_id   Int?
+  actualizado_por      usuarios? @relation("actualizador", fields: [actualizado_por_id], references: [id])
+  fecha_actualizacion  DateTime  @updatedAt
+  eliminado            Boolean   @default(false)
 
-  // Relaciones
-  statusHistory JobStatusHistory[]
-  payments      Payment[]
-  transaction   GatewayTransaction?
+  asignaciones         asignaciones[]
+  tiempos              tiempos[]
+  notificaciones       notificaciones[]
+  alertas              alertas[]
+  predicciones         predicciones_tiempo[]
 
-  @@index([status, priority, estimatedDelivery], name: "idx_job_kanban_main")
-  @@index([updatedAt], name: "idx_job_updated_at")
+  @@index([estado, prioridad, fecha_estimada_fin], name: "idx_pedidos_kanban")
 }
 
-model JobStatusHistory {
-  id         String   @id @default(uuid())
-  jobId      String
-  job        Job      @relation(fields: [jobId], references: [id])
-  oldStatus  JobStatus?
-  newStatus  JobStatus
-  changedById String?
-  changedBy   User?    @relation(fields: [changedById], references: [id])
-  changedAt  DateTime @default(now())
+model asignaciones {
+  id                Int      @id @default(autoincrement())
+  pedido_id         Int
+  pedido            pedidos  @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
+  trabajador_id     Int
+  trabajador        trabajadores @relation(fields: [trabajador_id], references: [id])
+  score_sugerencia  Float?
+  skill_match       Float?
+  tiempo_estimado_sec Int?
+  origen            OrigenAsignacion @default(MANUAL)
+  fecha_asignacion  DateTime @default(now())
+  estado            String   @default("Asignado")
+  comentarios       String?
 }
 
-model Payment {
-  id          String        @id @default(uuid())
-  jobId       String
-  job         Job           @relation(fields: [jobId], references: [id])
-  amount      Decimal       @db.Decimal(12, 2)
-  method      PaymentMethod
-  status      PaymentStatus @default(PENDIENTE)
-  createdAt   DateTime      @default(now())
+model tiempos {
+  id             Int      @id @default(autoincrement())
+  pedido_id      Int
+  pedido         pedidos  @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
+  trabajador_id  Int
+  trabajador     trabajadores @relation(fields: [trabajador_id], references: [id])
+  categoria      String   @default("Producción")
+  inicio         DateTime?
+  fin            DateTime?
+  duracion_sec   Int?
+  estado         EstadoTiempo @default(CERRADO)
+  registrado_por Int?
+  registradoPor  usuarios? @relation(fields: [registrado_por], references: [id])
 }
 
-model GatewayTransaction {
-  id          String        @id @default(uuid())
-  jobId       String        @unique
-  job         Job           @relation(fields: [jobId], references: [id])
-  provider    String
-  externalId  String        @unique
-  qrUrl       String
-  amount      Decimal       @db.Decimal(12, 2)
-  status      PaymentStatus @default(PENDIENTE)
-  payload     Json
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+model notificaciones {
+  id            Int      @id @default(autoincrement())
+  pedido_id     Int
+  pedido        pedidos  @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
+  cliente_id    Int
+  cliente       clientes @relation(fields: [cliente_id], references: [id])
+  mensaje       String
+  tipo          TipoNotificacion @default(INFO)
+  leida         Boolean  @default(false)
+  fecha_creacion DateTime @default(now())
+}
+
+model alertas {
+  id          Int      @id @default(autoincrement())
+  pedido_id   Int?
+  pedido      pedidos? @relation(fields: [pedido_id], references: [id])
+  tipo        String?
+  severidad   SeveridadAlerta
+  descripcion String?
+  fecha       DateTime @default(now())
+  atendida    Boolean  @default(false)
+}
+
+model reportes {
+  id               Int      @id @default(autoincrement())
+  tipo             String
+  parametros       Json?
+  fecha_generacion DateTime @default(now())
+  generado_por_id  Int?
+  generado_por     usuarios? @relation(fields: [generado_por_id], references: [id])
+  ruta_archivo     String?
+}
+
+model predicciones_tiempo {
+  id                Int      @id @default(autoincrement())
+  pedido_id         Int
+  pedido            pedidos  @relation(fields: [pedido_id], references: [id])
+  trabajador_id     Int
+  trabajador        trabajadores @relation(fields: [trabajador_id], references: [id])
+  t_estimado_sec    Int?
+  t_real_sec        Int?
+  desvio            Float?
+  modelo_version    String   @default("v1.0")
+  fecha_calculo     DateTime @default(now())
+  historicoModeloId Int?
+  historico_modelo  historico_modelo? @relation(fields: [historicoModeloId], references: [id])
+}
+
+model historico_modelo {
+  id                 Int      @id @default(autoincrement())
+  fecha_entrenamiento DateTime @default(now())
+  total_pedidos      Int?
+  mae                Float?
+  precision          Float?
+  parametros         Json?
+  predicciones       predicciones_tiempo[]
 }
