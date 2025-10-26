@@ -1,59 +1,49 @@
-import { Request, Response, NextFunction } from 'express';
-import { prisma } from '../prisma/client.js';
-import * as JobService from '../services/jobService.js';
+import type { Request, Response, NextFunction  } from "express";
+import { prisma } from '../prisma/client';
+import * as JobService from '../services/jobService';
+import { success, fail } from '../utils/response';
 
-// In this codebase 'Job' represents trabajos. Keep an alias for readability.
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const jobs = await prisma.job.findMany({ include: { client: true, assignedWorker: true }, orderBy: { description: 'desc' } });
-    res.json(jobs);
+  const pedidos = await prisma.pedidos.findMany({ include: { cliente: true, responsable: true }, orderBy: { fecha_actualizacion: 'desc' } });
+  return success(res, pedidos);
   } catch (err) { next(err); }
 };
 
 export const crear = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Map incoming fields to the validator/service shape used by JobService
+    if (!req.body.descripcion) {
+      return fail(res, 'VALIDATION_ERROR', 'El campo descripcion es obligatorio', 400);
+    }
+
     const body = {
-      code: undefined,
-      workType: req.body.workType,
-      description: req.body.description,
-      priority: req.body.priority || 'Media',
-      clientName: req.body.clientName,
-      clientPhone: req.body.clientPhone,
-      clientEmail: req.body.clientEmail,
-      clientAddress: req.body.clientAddress,
-      clientCompany: req.body.clientCompany,
-      clientAppEmail: req.body.clientAppEmail,
-      clientAppPhone: req.body.clientAppPhone,
-      sendAppInstructions: req.body.sendAppInstructions || false,
-      estimatedDelivery: req.body.estimatedDelivery,
-      assignedWorker: req.body.assignedWorkerName || req.body.assignedWorkerId,
-      paymentAmount: String(req.body.paymentAmount || '0'),
-      paymentStatus: req.body.paymentStatus || 'Pendiente',
-      materials: req.body.materials,
-      specifications: req.body.specifications,
-      dateCreated: req.body.dateCreated || new Date().toISOString().slice(0,10)
+      descripcion: req.body.descripcion,
+      prioridad: req.body.prioridad || 'MEDIA',
+      cliente_id: parseInt(req.body.cliente_id),
+      responsable_id: req.body.responsable_id ? parseInt(req.body.responsable_id) : undefined,
+      fecha_estimada_fin: req.body.fecha_estimada_fin ? new Date(req.body.fecha_estimada_fin) : null,
+      precio: req.body.precio ? parseFloat(req.body.precio) : null,
     } as any;
-        const job = await JobService.createJob(body);
-    res.status(201).json(job);
+  const pedido = await JobService.createJob(body);
+  return success(res, pedido, 201);
   } catch (err) { next(err); }
 };
 
 export const actualizar = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const id = req.params.id as string;
+    const id = Number(req.params.id);
     const data: any = {};
-    const updatable = ['workType', 'description', 'paymentAmount', 'priority', 'paymentStatus', 'materials', 'specifications', 'status'];
+    const updatable = ['descripcion', 'prioridad', 'precio', 'estado', 'notas', 'semaforo'];
     updatable.forEach(k => { if ((req.body as any)[k] !== undefined) data[k] = (req.body as any)[k]; });
-    const job = await prisma.job.update({ where: { id }, data });
-    res.json(job);
+  const pedido = await prisma.pedidos.update({ where: { id }, data });
+  return success(res, pedido);
   } catch (err) { next(err); }
 };
 
 export const eliminar = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const id = req.params.id as string;
-    await prisma.job.delete({ where: { id } });
-    res.status(204).end();
+    const id = Number(req.params.id);
+  await prisma.pedidos.delete({ where: { id } });
+  return success(res, null, 204);
   } catch (err) { next(err); }
 };

@@ -1,5 +1,5 @@
-// Use the generated Prisma Client directly to avoid runtime init issues with @prisma/client
-import { PrismaClient } from '../../generated/prisma/index.js';
+// Use the Prisma Client from the installed package
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 

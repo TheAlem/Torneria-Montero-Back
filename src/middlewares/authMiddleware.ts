@@ -1,34 +1,37 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction  } from "express";
 import jwt from 'jsonwebtoken';
-import { prisma } from '../prisma/client.js';
+import { prisma } from '../prisma/client';
+import { fail } from '../utils/response';
+import { logger } from '../utils/logger';
 
 const JWT_SECRET = process.env.JWT_SECRET ?? '';
 
 export async function authenticate(req: Request, res: Response, next: NextFunction) {
   const auth = req.headers.authorization;
-  if (!auth) return res.status(401).json({ error: 'No token' });
+  if (!auth) return fail(res, 'AUTH_ERROR', 'No token', 401);
   const parts = auth.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') return res.status(401).json({ error: 'Malformed token' });
+  if (parts.length !== 2 || parts[0] !== 'Bearer') return fail(res, 'AUTH_ERROR', 'Malformed token', 401);
   const token = parts[1];
   try {
     if (!JWT_SECRET) {
-      return res.status(500).json({ error: 'Server misconfiguration: JWT_SECRET missing' });
+      logger.error('Server misconfiguration: JWT_SECRET missing');
+      return fail(res, 'SERVER_ERROR', 'Server misconfiguration', 500);
     }
-  const payload = (jwt as any).verify(token, JWT_SECRET);
-    const profile = await prisma.user.findUnique({ where: { id: payload.id } });
-    if (!profile) return res.status(401).json({ error: 'User not found' });
-    (req as any).user = { id: profile.id, role: profile.role, email: profile.email };
+    const payload = (jwt as any).verify(token, JWT_SECRET);
+    const profile = await prisma.usuarios.findUnique({ where: { id: Number(payload.id) } });
+    if (!profile) return fail(res, 'AUTH_ERROR', 'User not found', 401);
+    (req as any).user = { id: profile.id, role: profile.rol, email: profile.email };
     next();
   } catch (err) {
-    return res.status(401).json({ error: 'Invalid token' });
+    return fail(res, 'AUTH_ERROR', 'Invalid token', 401);
   }
 }
 
 export function requireRole(...roles: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     const user = (req as any).user;
-    if (!user) return res.status(401).json({ error: 'Not authenticated' });
-    if (!roles.includes(user.role)) return res.status(403).json({ error: 'Forbidden' });
+    if (!user) return fail(res, 'AUTH_ERROR', 'Not authenticated', 401);
+    if (!roles.includes(user.role)) return fail(res, 'AUTH_ERROR', 'Forbidden', 403);
     next();
   };
 }

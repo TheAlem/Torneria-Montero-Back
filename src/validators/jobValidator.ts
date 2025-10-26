@@ -1,13 +1,12 @@
 import { z } from 'zod';
 
 export const CreateJobSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().min(1),
-  priority: z.enum(['BAJA', 'MEDIA', 'ALTA']).default('MEDIA'),
-  clientId: z.string().uuid(),
-  assignedWorkerId: z.string().uuid(),
-  estimatedDelivery: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  price: z.number().positive(),
+  descripcion: z.string().min(1),
+  prioridad: z.enum(['BAJA', 'MEDIA', 'ALTA']).default('MEDIA'),
+  cliente_id: z.number().int(),
+  responsable_id: z.number().int().optional(),
+  fecha_estimada_fin: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  precio: z.number().positive().optional(),
 });
 
 export type CreateJobBody = z.infer<typeof CreateJobSchema>;

@@ -1,17 +1,17 @@
-import { prisma } from '../prisma/client.js';
-import { CreateJobBody } from '../validators/jobValidator.js';
+import { prisma } from '../prisma/client';
+import { CreateJobBody } from '../validators/jobValidator';
 
 export async function createJob(payload: CreateJobBody) {
-  // generate a unique code for the job
-  const code = `P-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+  const data: any = {
+    descripcion: payload.descripcion,
+    prioridad: payload.prioridad,
+    cliente_id: Number(payload.cliente_id),
+    precio: payload.precio ?? null,
+    fecha_estimada_fin: payload.fecha_estimada_fin ? new Date(payload.fecha_estimada_fin) : null,
+    creado_por_id: null,
+  };
+  if (payload.responsable_id) data.responsable_id = Number(payload.responsable_id);
 
-  const job = await prisma.job.create({
-    data: {
-      ...payload,
-      code,
-      estimatedDelivery: payload.estimatedDelivery ? new Date(payload.estimatedDelivery) : null,
-    },
-  });
-
-  return job;
+  const pedido = await prisma.pedidos.create({ data });
+  return pedido;
 }
