@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { prisma } from '../../prisma/client';
 
 export type LinearModel = {
   version: string;
@@ -37,3 +38,25 @@ export function loadModel(name?: string): LinearModel | null {
   try { return JSON.parse(raw) as LinearModel; } catch { return null; }
 }
 
+export async function saveModelToDB(model: LinearModel) {
+  try {
+    const rec = await prisma.historico_modelo.create({
+      data: {
+        fecha_entrenamiento: new Date(),
+        total_pedidos: null,
+        mae: null,
+        precision: null,
+        parametros: model as any,
+      }
+    });
+    return rec.id;
+  } catch (_) { return null; }
+}
+
+export async function loadLatestModelFromDB(): Promise<LinearModel | null> {
+  try {
+    const rec = await prisma.historico_modelo.findFirst({ orderBy: { fecha_entrenamiento: 'desc' } });
+    if (!rec || !rec.parametros) return null;
+    return rec.parametros as any as LinearModel;
+  } catch (_) { return null; }
+}

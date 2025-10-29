@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../prisma/client';
 import { success, fail } from '../utils/response';
 import { logger } from '../utils/logger';
+import { evaluateAndNotify } from '../services/KanbanMonitorService';
 // enum types from Prisma removed to avoid direct dependency on generated client
 
 // Common select for kanban cards to ensure consistency
@@ -83,4 +84,14 @@ export const cambiarEstado = async (req: Request, res: Response, next: NextFunct
   } catch (err) {
     next(err);
   }
+};
+
+/**
+ * Dispara una evaluación del semáforo y notificaciones (ADMIN / operador).
+ */
+export const evaluarSemaforo = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await evaluateAndNotify();
+    return success(res, { result }, 200, 'Evaluación de semáforo completada');
+  } catch (err) { next(err); }
 };

@@ -553,6 +553,72 @@
         }
       }
     },
+    "/kanban/evaluar": {
+      "post": {
+        "tags": [
+          "Kanban"
+        ],
+        "summary": "Evaluar semáforo y notificar retrasos (solo ADMIN)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Evaluación completada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ml/train": {
+      "post": {
+        "tags": [
+          "ML"
+        ],
+        "summary": "Entrenar modelo de estimación de tiempo (solo ADMIN)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "integer",
+                    "description": "Cantidad máxima de registros de entrenamiento (por defecto 1000)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Modelo entrenado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/pedidos": {
       "get": {
         "tags": [

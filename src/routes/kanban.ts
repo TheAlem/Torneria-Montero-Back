@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { listarKanban, cambiarEstado } from '../controllers/kanban';
+import { listarKanban, cambiarEstado, evaluarSemaforo } from '../controllers/kanban';
+import { authenticate, requireRole } from '../middlewares/authMiddleware';
 
 const router = Router();
 
@@ -18,7 +19,7 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/UnifiedSuccess'
  */
-router.get('/', listarKanban);
+router.get('/', authenticate, listarKanban);
 
 /**
  * @openapi
@@ -54,6 +55,25 @@ router.get('/', listarKanban);
  *             schema:
  *               $ref: '#/components/schemas/UnifiedSuccess'
  */
-router.patch('/:id/status', cambiarEstado);
+router.patch('/:id/status', authenticate, cambiarEstado);
+
+/**
+ * @openapi
+ * /kanban/evaluar:
+ *   post:
+ *     tags:
+ *       - Kanban
+ *     summary: Evaluar semáforo y notificar retrasos (solo ADMIN)
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       '200':
+ *         description: Evaluación completada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnifiedSuccess'
+ */
+router.post('/evaluar', authenticate, requireRole('admin'), evaluarSemaforo);
 
 export default router;

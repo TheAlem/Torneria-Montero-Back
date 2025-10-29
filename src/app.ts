@@ -13,6 +13,7 @@ import asignacionesRoutes from './routes/asignaciones';
 import reportesRoutes from './routes/reportes';
 import authRoutes from './routes/auth';
 import kanbanRoutes from './routes/kanban';
+import mlRoutes from './routes/ml';
 import { success } from './utils/response';
 
 const app = express();
@@ -28,6 +29,7 @@ app.use('/api/trabajadores', trabajadoresRoutes);
 app.use('/api/asignar', asignacionesRoutes);
 app.use('/reportes', reportesRoutes);
 app.use('/kanban', kanbanRoutes);
+app.use('/ml', mlRoutes);
 
 // Swagger UI (generated at runtime with swagger-jsdoc)
 const swaggerOptions = {

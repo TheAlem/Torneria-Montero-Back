@@ -1,4 +1,5 @@
 import { prisma } from '../prisma/client';
+import { predictWithLinearModel, predictWithLatestModel } from './ml/predictor';
 
 export async function predictTiempoSec(pedidoId: number, trabajadorId: number): Promise<number> {
   const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId } });
@@ -23,6 +24,13 @@ export async function predictTiempoSec(pedidoId: number, trabajadorId: number): 
     return Math.max(900, Math.round(avg)); // mínimo 15m
   }
 
+  // Intentar modelo entrenado (si existe)
+  const precioNum = typeof (pedido as any).precio === 'object' || typeof (pedido as any).precio === 'string' ? Number((pedido as any).precio as any) : ((pedido as any).precio ?? null);
+  const modelPredDB = await predictWithLatestModel({ prioridad: pedido.prioridad as any, precio: precioNum });
+  if (modelPredDB) return modelPredDB;
+  const modelPredFS = predictWithLinearModel({ prioridad: pedido.prioridad as any, precio: precioNum });
+  if (modelPredFS) return modelPredFS;
+
   // Fallback por prioridad
   if (pedido.prioridad === 'ALTA') return 3 * 60 * 60;
   if (pedido.prioridad === 'MEDIA') return 6 * 60 * 60;
@@ -41,4 +49,3 @@ export async function storePrediccion(pedidoId: number, trabajadorId: number, tE
     });
   } catch (_) { /* swallow */ }
 }
-
