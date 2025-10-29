@@ -21,6 +21,17 @@ const router = Router();
  *                 type: string
  *               password:
  *                 type: string
+ *               nombre:
+ *                 type: string
+ *               rol:
+ *                 type: string
+ *                 enum: [ADMIN, TORNERO, CLIENTE]
+ *               ci_rut:
+ *                 type: string
+ *               telefono:
+ *                 type: string
+ *               direccion:
+ *                 type: string
  *     responses:
  *       '201':
  *         description: Usuario registrado

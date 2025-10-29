@@ -25,6 +25,33 @@ router.get('/', authenticate, ctrl.listar);
 
 /**
  * @openapi
+ * /api/pedidos/{id}:
+ *   get:
+ *     tags:
+ *       - Pedidos
+ *     summary: Obtener pedido por id
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       '200':
+ *         description: Pedido encontrado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnifiedSuccess'
+ *       '404':
+ *         description: Pedido no encontrado
+ */
+router.get('/:id', authenticate, ctrl.getById);
+
+/**
+ * @openapi
  * /api/pedidos:
  *   post:
  *     tags:

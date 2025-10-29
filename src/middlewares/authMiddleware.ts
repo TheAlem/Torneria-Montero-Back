@@ -20,6 +20,9 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     const payload = (jwt as any).verify(token, JWT_SECRET);
     const profile = await prisma.usuarios.findUnique({ where: { id: Number(payload.id) } });
     if (!profile) return fail(res, 'AUTH_ERROR', 'User not found', 401);
+    if (String(profile.rol).toUpperCase() === 'TRABAJADOR') {
+      return fail(res, 'AUTH_ERROR', 'Forbidden', 403);
+    }
     (req as any).user = { id: profile.id, role: profile.rol, email: profile.email };
     next();
   } catch (err) {
@@ -31,7 +34,9 @@ export function requireRole(...roles: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     const user = (req as any).user;
     if (!user) return fail(res, 'AUTH_ERROR', 'Not authenticated', 401);
-    if (!roles.includes(user.role)) return fail(res, 'AUTH_ERROR', 'Forbidden', 403);
+    const expected = roles.map(r => r.toUpperCase());
+    const actual = String(user.role).toUpperCase();
+    if (!expected.includes(actual)) return fail(res, 'AUTH_ERROR', 'Forbidden', 403);
     next();
   };
 }

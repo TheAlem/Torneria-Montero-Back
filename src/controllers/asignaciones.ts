@@ -3,7 +3,7 @@ import { prisma } from '../prisma/client';
 import { success, fail } from '../utils/response';
 import { logger } from '../utils/logger';
 
-// Simple assignment: update a Job to set assignedWorkerId
+// Asignación simple: actualizar Pedido con responsable
 export const asignar = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { pedido_id, trabajador_id, origen = 'MANUAL', score_sugerencia, skill_match, tiempo_estimado_sec, comentarios } = req.body;

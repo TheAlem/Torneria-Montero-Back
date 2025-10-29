@@ -16,6 +16,7 @@ enum RolUsuario {
   CLIENTE
   TORNERO
   ADMIN
+  TRABAJADOR
 }
 
 enum EstadoPedido {

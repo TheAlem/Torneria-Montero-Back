@@ -25,25 +25,6 @@ router.get('/', authenticate, ctrl.listar);
 
 /**
  * @openapi
- * /api/trabajadores:
- *   post:
- *     tags:
- *       - Trabajadores
- *     summary: Crear trabajador
- *     security:
- *       - BearerAuth: []
- *     responses:
- *       '201':
- *         description: Trabajador creado
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/UnifiedSuccess'
- */
-router.post('/', authenticate, requireRole('admin','tornero'), ctrl.crear);
-
-/**
- * @openapi
  * /api/trabajadores/{id}:
  *   get:
  *     tags:

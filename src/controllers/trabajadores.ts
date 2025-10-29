@@ -10,16 +10,6 @@ export const listar = async (req: Request, res: Response, next: NextFunction) =>
   } catch (err) { next(err); }
 };
 
-export const crear = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { usuario_id, ci, direccion, rol_tecnico } = req.body;
-    if (!usuario_id || !ci) return fail(res, 'VALIDATION_ERROR', 'usuario_id and ci required', 400);
-    const w = await prisma.trabajadores.create({ data: { usuario_id: Number(usuario_id), ci, direccion, rol_tecnico } });
-    logger.info({ msg: 'Trabajador creado', id: w.id });
-    return success(res, w, 201);
-  } catch (err) { next(err); }
-};
-
 export const obtener = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = Number(req.params.id);

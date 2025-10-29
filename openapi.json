@@ -166,6 +166,26 @@
                   },
                   "password": {
                     "type": "string"
+                  },
+                  "nombre": {
+                    "type": "string"
+                  },
+                  "rol": {
+                    "type": "string",
+                    "enum": [
+                      "ADMIN",
+                      "TORNERO",
+                      "CLIENTE"
+                    ]
+                  },
+                  "ci_rut": {
+                    "type": "string"
+                  },
+                  "telefono": {
+                    "type": "string"
+                  },
+                  "direccion": {
+                    "type": "string"
                   }
                 }
               }
@@ -415,6 +435,27 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "newStatus": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Estado actualizado",
@@ -493,6 +534,42 @@
       }
     },
     "/api/pedidos/{id}": {
+      "get": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Obtener pedido por id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pedido encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pedido no encontrado"
+          }
+        }
+      },
       "put": {
         "tags": [
           "Pedidos"
@@ -617,29 +694,6 @@
         "responses": {
           "200": {
             "description": "Lista de trabajadores",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnifiedSuccess"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "Trabajadores"
-        ],
-        "summary": "Crear trabajador",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "Trabajador creado",
             "content": {
               "application/json": {
                 "schema": {

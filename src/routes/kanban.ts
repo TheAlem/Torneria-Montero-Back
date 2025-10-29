@@ -33,6 +33,19 @@ router.get('/', listarKanban);
  *         required: true
  *         schema:
  *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               newStatus:
+ *                 type: string
+ *               note:
+ *                 type: string
+ *               userId:
+ *                 type: integer
  *     responses:
  *       '200':
  *         description: Estado actualizado

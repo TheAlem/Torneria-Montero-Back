@@ -8,17 +8,8 @@ import { logger } from '../utils/logger';
 export const register = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const JWT_SECRET = process.env.JWT_SECRET as string;
-    const { email, password, role: rawRole, nombre } = req.body;
-    
-  let role = (rawRole || 'CLIENTE').toUpperCase();
-    if (role === 'CLIENT') {
-      role = 'CLIENTE'; // Corrige el error común de enviar CLIENT en vez de CLIENTE
-    }
-
-    const validRoles = ['ADMIN', 'TORNERO', 'CLIENTE'];
-    if (!validRoles.includes(role)) {
-      return fail(res, 'VALIDATION_ERROR', `Rol inválido: '${rawRole}'. Roles permitidos: ${validRoles.join(', ')}`, 400);
-    }
+    const { email, password, nombre, ci_rut, telefono, direccion } = req.body;
+    const role = 'CLIENTE';
 
     if (!email || !password) return fail(res, 'VALIDATION_ERROR', 'email y password requeridos', 400);
     const exists = await prisma.usuarios.findUnique({ where: { email } });
@@ -30,17 +21,15 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
       password_hash: hash, 
       rol: role as any, 
       nombre: nombre || '',
-      ...(role === 'CLIENTE' && {
-        cliente: {
-          create: {
-            nombre: nombre || '',
-            email: email,
-            ci_rut: req.body.ci_rut || '',
-            telefono: req.body.telefono || '',
-            direccion: req.body.direccion || ''
-          }
+      cliente: {
+        create: {
+          nombre: nombre || '',
+          email: email,
+          ci_rut: ci_rut || '',
+          telefono: telefono || '',
+          direccion: direccion || ''
         }
-      })
+      }
     },
     include: {
       cliente: true
