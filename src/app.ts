@@ -12,18 +12,16 @@ import trabajadoresRoutes from './routes/trabajadores';
 import asignacionesRoutes from './routes/asignaciones';
 import reportesRoutes from './routes/reportes';
 import authRoutes from './routes/auth';
-import jobsRoutes from './routes/jobs';
 import kanbanRoutes from './routes/kanban';
 import { success } from './utils/response';
 
 const app = express();
- 
+
 const corsOrigins = (process.env.CORS_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
 app.use(cors({ origin: corsOrigins.length ? corsOrigins : true }));
 app.use(express.json());
 
 app.use('/auth', authRoutes);
-app.use('/api/jobs', jobsRoutes);
 app.use('/api/clientes', clientesRoutes);
 app.use('/api/pedidos', pedidosRoutes);
 app.use('/api/trabajadores', trabajadoresRoutes);

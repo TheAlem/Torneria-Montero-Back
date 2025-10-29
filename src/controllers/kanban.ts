@@ -17,7 +17,7 @@ const kanbanCardSelect = {
 };
 
 /**
- * Lists jobs for the Kanban board, organized by status.
+ * Lists pedidos for the Kanban board, organized by status.
  * Accepts query params for filtering and searching.
  */
 export const listarKanban = async (req: Request, res: Response, next: NextFunction) => {
@@ -70,7 +70,7 @@ export const listarKanban = async (req: Request, res: Response, next: NextFuncti
 };
 
 /**
- * Changes the status of a job and records the change in history.
+ * Changes the status of a pedido and records the change in history.
  */
 export const cambiarEstado = async (req: Request, res: Response, next: NextFunction) => {
   try {

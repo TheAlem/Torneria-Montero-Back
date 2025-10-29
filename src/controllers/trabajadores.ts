@@ -45,3 +45,10 @@ export const eliminar = async (req: Request, res: Response, next: NextFunction) 
     return success(res, null, 204);
   } catch (err) { next(err); }
 };
+
+export const listarActivos = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+  const workers = await prisma.trabajadores.findMany({ where: { estado: 'Activo' }, include: { usuario: true } });
+  return success(res, workers.map((w: any) => ({ id: w.id, nombre: w.usuario?.nombre || null })));
+  } catch (err) { next(err); }
+};

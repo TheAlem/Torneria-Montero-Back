@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CreateJobSchema = z.object({
+export const CreatePedidoSchema = z.object({
   descripcion: z.string().min(1),
   prioridad: z.enum(['BAJA', 'MEDIA', 'ALTA']).default('MEDIA'),
   cliente_id: z.number().int(),
@@ -9,4 +9,4 @@ export const CreateJobSchema = z.object({
   precio: z.number().positive().optional(),
 });
 
-export type CreateJobBody = z.infer<typeof CreateJobSchema>;
+export type CreatePedidoBody = z.infer<typeof CreatePedidoSchema>;

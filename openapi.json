@@ -1,22 +1,9 @@
 {
-  "openapi": "3.0.3",
+  "openapi": "3.0.0",
   "info": {
-    "title": "Tornería Montero API",
-    "version": "1.0.0",
-    "description": "API para gestionar trabajos, clientes y trabajadores de Tornería Montero. Autenticación por header x-api-key."
+    "title": "Torneria Montero Back",
+    "version": "1.0.0"
   },
-  "servers": [
-    { "url": "/", "description": "Local server" }
-  ],
-  "tags": [
-    { "name": "Auth", "description": "Autenticación y gestión de usuarios" },
-    { "name": "Clientes", "description": "Gestión de clientes" },
-    { "name": "Pedidos", "description": "Gestión de pedidos y trabajos" },
-    { "name": "Trabajadores", "description": "Gestión de trabajadores" },
-    { "name": "Asignaciones", "description": "Gestión de asignaciones de trabajos" },
-    { "name": "Reportes", "description": "Generación y gestión de reportes" },
-    { "name": "Kanban", "description": "Operaciones para el tablero Kanban" }
-  ],
   "components": {
     "securitySchemes": {
       "BearerAuth": {
@@ -27,490 +14,110 @@
       "ApiKeyAuth": {
         "type": "apiKey",
         "in": "header",
-        "name": "x-api-key",
-        "description": "Legacy API key header (x-api-key). BearerAuth (JWT) is preferred."
+        "name": "x-api-key"
       }
     },
     "schemas": {
-      "AuthRegisterRequest": {
+      "UnifiedSuccess": {
         "type": "object",
-        "required": ["email", "password", "nombre"],
         "properties": {
-          "email": { "type": "string", "format": "email", "description": "Correo electrónico del usuario" },
-          "password": { "type": "string", "description": "Contraseña del usuario" },
-          "role": { 
-            "type": "string", 
-            "enum": ["ADMIN", "TORNERO", "CLIENTE"], 
-            "default": "CLIENTE",
-            "description": "Rol del usuario. Si es CLIENTE, se creará automáticamente un registro en la tabla clientes"
+          "status": {
+            "type": "string",
+            "example": "success"
           },
-          "nombre": { "type": "string", "description": "Nombre completo del usuario" },
-          "ci_rut": { 
-            "type": "string", 
-            "description": "Cédula o RUT del cliente. Requerido si role es CLIENTE" 
+          "data": {
+            "type": "object"
           },
-          "telefono": { 
-            "type": "string", 
-            "description": "Teléfono de contacto. Requerido si role es CLIENTE" 
-          },
-          "direccion": { 
-            "type": "string", 
-            "description": "Dirección del cliente. Requerido si role es CLIENTE" 
+          "error": {
+            "type": [
+              "object",
+              "null"
+            ]
           }
-        }
-      },
-      "AuthLoginRequest": {
-        "type": "object",
-        "required": ["email", "password"],
-        "properties": {
-          "email": { "type": "string", "format": "email" },
-          "password": { "type": "string" }
-        }
-      },
-      "AuthProfile": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "email": { "type": "string", "format": "email" },
-          "role": { "type": "string", "enum": ["ADMIN", "TORNERO", "CLIENTE"] }
-        }
-      },
-      "AuthResponse": {
-        "type": "object",
-        "properties": {
-          "token": { "type": "string" },
-          "profile": { "$ref": "#/components/schemas/AuthProfile" }
-        }
-      },
-      "ErrorResponse": {
-        "type": "object",
-        "properties": {
-          "error": { "type": "string" }
         }
       },
       "UnifiedError": {
         "type": "object",
         "properties": {
-          "code": { "type": "string", "example": "VALIDATION_ERROR" },
-          "message": { "type": "string", "example": "Mensaje de error legible" }
-        }
-      },
-      "UnifiedSuccess": {
-        "type": "object",
-        "properties": {
-          "status": { "type": "string", "example": "success" },
-          "data": { "type": ["object", "array", "null"], "description": "Payload de respuesta" },
-          "error": { "$ref": "#/components/schemas/UnifiedError", "nullable": true }
-        }
-      },
-      "AuthResponseWrapper": {
-        "type": "object",
-        "properties": {
-          "status": { "type": "string", "example": "success" },
-          "data": { "$ref": "#/components/schemas/AuthResponse" },
-          "error": { "$ref": "#/components/schemas/UnifiedError", "nullable": true }
-        }
-      },
-      "PedidoResponseWrapper": {
-        "type": "object",
-        "properties": {
-          "status": { "type": "string", "example": "success" },
-          "data": { "$ref": "#/components/schemas/PedidoResponse" },
-          "error": { "$ref": "#/components/schemas/UnifiedError", "nullable": true }
-        }
-      },
-      "ClientListResponseWrapper": {
-        "type": "object",
-        "properties": {
-          "status": { "type": "string", "example": "success" },
-          "data": { "type": "array", "items": { "$ref": "#/components/schemas/Client" } },
-          "error": { "$ref": "#/components/schemas/UnifiedError", "nullable": true }
-        }
-      },
-      "ClientAppAccount": {
-        "type": "object",
-        "properties": {
-          "appEmail": { "type": "string", "format": "email" },
-          "appPhone": { "type": "string" }
-        }
-      },
-      "Client": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "nombre": { "type": "string" },
-          "ci_rut": { "type": "string" },
-          "email": { "type": "string", "format": "email" },
-          "telefono": { "type": "string" },
-          "direccion": { "type": "string" },
-          "estado": { "type": "string" },
-          "fecha_registro": { "type": "string", "format": "date-time" }
-        }
-      },
-      "Worker": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "ci": { "type": "string" },
-          "rol_tecnico": { "type": "string" },
-          "estado": { "type": "string" },
-          "usuario_id": { "type": "integer" }
-        }
-      },
-      "PedidoCreate": {
-        "type": "object",
-        "required": ["descripcion", "cliente_id"],
-        "properties": {
-          "descripcion": { 
+          "status": {
             "type": "string",
-            "description": "Descripción detallada del pedido"
+            "example": "error"
           },
-          "prioridad": { 
-            "type": "string", 
-            "enum": ["BAJA", "MEDIA", "ALTA"], 
-            "default": "MEDIA",
-            "description": "Prioridad del pedido"
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
           },
-          "cliente_id": { 
-            "type": "integer",
-            "description": "ID del cliente que realiza el pedido"
-          },
-          "responsable_id": { 
-            "type": ["integer", "null"],
-            "description": "ID del trabajador asignado al pedido (opcional)"
-          },
-          "fecha_estimada_fin": { 
-            "type": "string", 
-            "format": "date",
-            "description": "Fecha estimada de finalización (YYYY-MM-DD)"
-          },
-          "precio": { 
-            "type": ["number", "string"], 
-            "description": "Precio del trabajo"
-          },
-          "notas": {
-            "type": "string",
-            "description": "Notas adicionales sobre el trabajo (opcional)"
-          },
-          "tiempo_estimado_sec": {
-            "type": "integer",
-            "description": "Tiempo estimado en segundos (opcional)"
-          },
-          "adjuntos": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Lista de URLs o identificadores de archivos adjuntos (opcional)"
-          }
-        }
-      },
-      "PedidoResponse": {
-        "type": "object",
-        "properties": {
-          "id": { 
-            "type": "integer",
-            "description": "ID único del pedido" 
-          },
-          "cliente_id": {
-            "type": "integer",
-            "description": "ID del cliente que realizó el pedido"
-          },
-          "descripcion": { 
-            "type": "string",
-            "description": "Descripción detallada del pedido"
-          },
-          "prioridad": { 
-            "type": "string", 
-            "enum": ["BAJA", "MEDIA", "ALTA"],
-            "description": "Nivel de prioridad del pedido"
-          },
-          "precio": { 
-            "type": "string",
-            "description": "Precio del trabajo"
-          },
-          "fecha_inicio": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Fecha y hora de inicio del trabajo"
-          },
-          "fecha_estimada_fin": { 
-            "type": "string", 
-            "format": "date-time",
-            "description": "Fecha y hora estimada de finalización"
-          },
-          "estado": { 
-            "type": "string", 
-            "enum": ["PENDIENTE", "ASIGNADO", "EN_PROGRESO", "QA", "ENTREGADO"],
-            "description": "Estado actual del pedido"
-          },
-          "responsable_id": { 
-            "type": ["integer", "null"],
-            "description": "ID del trabajador asignado (si existe)"
-          },
-          "semaforo": {
-            "type": "string",
-            "enum": ["VERDE", "AMARILLO", "ROJO"],
-            "description": "Estado del semáforo para seguimiento"
-          },
-          "notas": {
-            "type": ["string", "null"],
-            "description": "Notas adicionales sobre el trabajo"
-          },
-          "adjuntos": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Lista de archivos adjuntos"
-          },
-          "tiempo_estimado_sec": {
-            "type": ["integer", "null"],
-            "description": "Tiempo estimado en segundos"
-          },
-          "tiempo_real_sec": {
-            "type": ["integer", "null"],
-            "description": "Tiempo real empleado en segundos"
-          },
-          "creado_por_id": {
-            "type": ["integer", "null"],
-            "description": "ID del usuario que creó el pedido"
-          },
-          "actualizado_por_id": {
-            "type": ["integer", "null"],
-            "description": "ID del último usuario que actualizó el pedido"
-          },
-          "fecha_actualizacion": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Fecha y hora de la última actualización"
-          },
-          "eliminado": {
-            "type": "boolean",
-            "description": "Indica si el pedido ha sido marcado como eliminado"
-          }
-        },
-        "required": ["id", "cliente_id", "descripcion", "prioridad", "estado", "fecha_actualizacion"]
-      },
-      "KanbanCardClient": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "nombre": { "type": "string" },
-          "telefono": { "type": "string" }
-        }
-      },
-      "KanbanCardWorker": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "usuario_id": { "type": "integer" },
-          "rol_tecnico": { "type": "string" }
-        }
-      },
-      "KanbanCard": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "descripcion": { "type": "string" },
-          "prioridad": { "type": "string", "enum": ["BAJA", "MEDIA", "ALTA"] },
-          "estado": { "type": "string", "enum": ["PENDIENTE", "ASIGNADO", "EN_PROGRESO", "QA", "ENTREGADO"] },
-          "fecha_estimada_fin": { "type": "string", "format": "date-time" },
-          "fecha_actualizacion": { "type": "string", "format": "date-time" },
-          "cliente": { "$ref": "#/components/schemas/KanbanCardClient" },
-          "responsable": { "$ref": "#/components/schemas/KanbanCardWorker" }
-        }
-      },
-      "KanbanColumns": {
-        "type": "object",
-        "properties": {
-          "columns": {
+          "error": {
             "type": "object",
             "properties": {
-              "PENDIENTE": { "type": "array", "items": { "$ref": "#/components/schemas/KanbanCard" } },
-              "EN_PROGRESO": { "type": "array", "items": { "$ref": "#/components/schemas/KanbanCard" } },
-              "TERMINADO": { "type": "array", "items": { "$ref": "#/components/schemas/KanbanCard" } },
-              "ENTREGADO": { "type": "array", "items": { "$ref": "#/components/schemas/KanbanCard" } }
-            },
-            "additionalProperties": false
-          }
-        }
-      },
-      "ChangeStatusRequest": {
-        "type": "object",
-        "required": ["newStatus"],
-        "properties": {
-          "newStatus": { "type": "string", "enum": ["PENDIENTE", "ASIGNADO", "EN_PROGRESO", "QA", "ENTREGADO"] },
-          "note": { "type": "string" },
-          "userId": { "type": "integer" }
-        }
-      }
-    }
-  },
-  "security": [{ "ApiKeyAuth": [] }],
-  "paths": {
-    "/api/jobs": {
-      "get": {
-        "tags": ["Pedidos"],
-        "summary": "Listar trabajos (compatibilidad)",
-        "security": [{ "BearerAuth": [] }],
-        "responses": {
-          "200": {
-            "description": "Lista de trabajos",
-            "content": {
-              "application/json": {
-                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PedidoResponse" } }
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
               }
             }
           }
         }
       },
-      "post": {
-        "tags": ["Pedidos"],
-        "summary": "Crear trabajo (compatibilidad)",
-        "security": [{ "BearerAuth": [] }],
-        "requestBody": {
-          "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PedidoCreate" } } }
-        },
-        "responses": {
-          "201": { "description": "Creado", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PedidoResponse" } } } }
+      "Client": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "nombre": {
+            "type": "string"
+          },
+          "telefono": {
+            "type": "string"
+          }
         }
+      },
+      "ClientListResponseWrapper": {
+        "$ref": "#/components/schemas/UnifiedSuccess"
       }
-    },
-    "/api/jobs/workers": {
-      "get": {
-        "tags": ["Trabajadores"],
-        "summary": "Listar trabajadores (desde jobs)",
-        "security": [{ "BearerAuth": [] }],
-        "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Worker" } } } } }
-        }
-      }
-    },
+    }
+  },
+  "paths": {
     "/api/asignar": {
       "post": {
-        "tags": ["Asignaciones"],
-        "summary": "Asignar un trabajo a un trabajador",
-        "security": [{ "BearerAuth": [] }],
+        "tags": [
+          "Asignaciones"
+        ],
+        "summary": "Asignar pedido a trabajador",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["pedido_id","trabajador_id"],
                 "properties": {
-                  "pedido_id": { "type": "integer" },
-                  "trabajador_id": { "type": "integer" },
-                  "origen": { "type": "string", "enum": ["MANUAL","SUGERIDO"] }
+                  "pedido_id": {
+                    "type": "integer"
+                  },
+                  "trabajador_id": {
+                    "type": "integer"
+                  }
                 }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": { "description": "Asignación creada", "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } } } } }
-        }
-      },
-      "get": {
-        "tags": ["Asignaciones"],
-        "summary": "Listar asignaciones",
-        "security": [{ "BearerAuth": [] }],
-        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object" } } } } } }
-      }
-    },
-    "/api/pedidos": {
-      "post": {
-        "tags": ["Jobs"],
-        "summary": "Crear un nuevo pedido",
-        "description": "Crea un nuevo pedido en el sistema. Requiere autenticación mediante token JWT.",
-        "security": [{ "BearerAuth": [] }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": { 
-              "schema": { "$ref": "#/components/schemas/PedidoCreate" },
-              "example": {
-                "descripcion": "Torneado de pieza específica",
-                "prioridad": "MEDIA",
-                "cliente_id": 1,
-                "responsable_id": 2,
-                "fecha_estimada_fin": "2025-10-30",
-                "precio": 250.50
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "Pedido creado exitosamente",
-            "content": {
-              "application/json": { 
-                "schema": { "$ref": "#/components/schemas/PedidoResponseWrapper" }
-              }
-            }
-          },
-          "400": { 
-            "description": "Error de validación",
+            "description": "Asignación creada",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "example": "El campo descripcion es obligatorio"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": { 
-            "description": "No autenticado",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "example": "No token provided"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": { 
-            "description": "Cliente o trabajador no encontrado",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "example": "Cliente con ID 1 no encontrado"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": { 
-            "description": "Error del servidor",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "example": "Error interno del servidor"
-                    }
-                  }
+                  "$ref": "#/components/schemas/UnifiedSuccess"
                 }
               }
             }
@@ -518,36 +125,477 @@
         }
       },
       "get": {
-        "tags": ["Jobs"],
-        "summary": "Listar todos los pedidos",
-        "description": "Obtiene una lista de todos los pedidos en el sistema. Requiere autenticación mediante token JWT.",
-        "security": [{ "BearerAuth": [] }],
+        "tags": [
+          "Asignaciones"
+        ],
+        "summary": "Listar asignaciones",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Lista de pedidos obtenida exitosamente",
+            "description": "Lista de asignaciones",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/PedidoResponse"
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Registrar usuario",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
                   }
                 }
               }
             }
-          },
-          "401": {
-            "description": "No autenticado",
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Usuario registrado",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "example": "No token provided"
-                    }
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Login usuario",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
                   }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login exitoso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/clientes": {
+      "get": {
+        "tags": [
+          "Clientes"
+        ],
+        "summary": "Listar todos los clientes",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de clientes (envoltorio unificado)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientListResponseWrapper"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Clientes"
+        ],
+        "summary": "Crear un cliente",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "nombre": {
+                    "type": "string"
+                  },
+                  "telefono": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Cliente creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/clientes/{id}": {
+      "get": {
+        "tags": [
+          "Clientes"
+        ],
+        "summary": "Obtener cliente por id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cliente encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Clientes"
+        ],
+        "summary": "Actualizar cliente",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cliente actualizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Clientes"
+        ],
+        "summary": "Eliminar cliente",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Eliminado"
+          }
+        }
+      }
+    },
+    "/kanban": {
+      "get": {
+        "tags": [
+          "Kanban"
+        ],
+        "summary": "Obtener tablero kanban",
+        "responses": {
+          "200": {
+            "description": "Kanban",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kanban/{id}/status": {
+      "patch": {
+        "tags": [
+          "Kanban"
+        ],
+        "summary": "Cambiar estado de pedido",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado actualizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pedidos": {
+      "get": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Listar pedidos",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de pedidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Crear pedido",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "descripcion": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Pedido creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pedidos/{id}": {
+      "put": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Actualizar pedido",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pedido actualizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Eliminar pedido",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Eliminado"
+          }
+        }
+      }
+    },
+    "/reportes/semanal": {
+      "get": {
+        "tags": [
+          "Reportes"
+        ],
+        "summary": "Reporte semanal",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reporte semanal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reportes/mensual": {
+      "get": {
+        "tags": [
+          "Reportes"
+        ],
+        "summary": "Reporte mensual",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reporte mensual",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
                 }
               }
             }
@@ -557,573 +605,146 @@
     },
     "/api/trabajadores": {
       "get": {
-        "tags": ["Trabajadores"],
-        "summary": "Listar trabajadores activos",
-        "security": [{ "BearerAuth": [] }],
+        "tags": [
+          "Trabajadores"
+        ],
+        "summary": "Listar trabajadores",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "Lista de trabajadores",
             "content": {
-              "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Worker" } } }
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
             }
           }
         }
       },
       "post": {
-        "tags": ["Trabajadores"],
-        "summary": "Crear un trabajador",
-        "security": [{ "BearerAuth": [] }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["ci","usuario_id"],
-                "properties": {
-                  "ci": { "type": "string" },
-                  "rol_tecnico": { "type": "string" },
-                  "usuario_id": { "type": "integer" },
-                  "direccion": { "type": "string" }
+        "tags": [
+          "Trabajadores"
+        ],
+        "summary": "Crear trabajador",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Trabajador creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
                 }
               }
             }
           }
-        },
-        "responses": {
-          "201": { "description": "Trabajador creado", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Worker" } } } }
         }
       }
     },
     "/api/trabajadores/{id}": {
       "get": {
-        "tags": ["Trabajadores"],
-        "summary": "Obtener trabajador por ID",
-        "security": [{ "BearerAuth": [] }],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Worker" } } } }, "404": { "description": "Not found" } }
+        "tags": [
+          "Trabajadores"
+        ],
+        "summary": "Obtener trabajador por id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trabajador encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
       },
       "put": {
-        "tags": ["Trabajadores"],
+        "tags": [
+          "Trabajadores"
+        ],
         "summary": "Actualizar trabajador",
-        "security": [{ "BearerAuth": [] }],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "rol_tecnico": { "type": "string" }, "estado": { "type": "string" } } } } } },
-        "responses": { "200": { "description": "Actualizado", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Worker" } } } }, "404": { "description": "Not found" } }
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trabajador actualizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
       },
       "delete": {
-        "tags": ["Trabajadores"],
+        "tags": [
+          "Trabajadores"
+        ],
         "summary": "Eliminar trabajador",
-        "security": [{ "BearerAuth": [] }],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "Eliminado", "content": { "application/json": { "schema": { "type": "object", "properties": { "message": { "type": "string" } } } } } }, "404": { "description": "Not found" } }
-      }
-    },
-    "/api/pedidos/{id}": {
-      "get": {
-        "tags": ["Jobs"],
-        "summary": "Obtener pedido por id",
-        "security": [{ "ApiKeyAuth": [] }],
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/PedidoResponse" } }
-            }
-          },
-          "401": { "description": "Missing/invalid API key" },
-          "404": { "description": "Not found" }
-        }
-      }
-    },
-    "/api/clientes": {
-      "get": {
-        "tags": ["Clientes"],
-        "summary": "Listar todos los clientes",
-        "security": [{ "BearerAuth": [] }],
-        "parameters": [
-          { 
-            "name": "query", 
-            "in": "query", 
-            "required": false, 
-            "schema": { "type": "string" },
-            "description": "Término de búsqueda opcional para filtrar clientes"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Lista de clientes obtenida exitosamente",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ClientListResponseWrapper" }
-              }
-            }
-          },
-          "401": { 
-            "description": "No autenticado",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": ["Clientes"],
-        "summary": "Crear un nuevo cliente",
-        "security": [{ "BearerAuth": [] }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["nombre", "ci_rut"],
-                "properties": {
-                  "nombre": {
-                    "type": "string",
-                    "description": "Nombre completo del cliente"
-                  },
-                  "ci_rut": {
-                    "type": "string",
-                    "description": "Cédula o RUT del cliente"
-                  },
-                  "email": {
-                    "type": "string",
-                    "format": "email",
-                    "description": "Correo electrónico del cliente"
-                  },
-                  "telefono": {
-                    "type": "string",
-                    "description": "Número de teléfono del cliente"
-                  },
-                  "direccion": {
-                    "type": "string",
-                    "description": "Dirección del cliente"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Cliente creado exitosamente",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Client" }
-              }
-            }
-          },
-          "400": {
-            "description": "Datos inválidos",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
-              }
-            }
-          },
-          "401": {
-            "description": "No autenticado",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/clientes/{id}": {
-      "get": {
-        "tags": ["Clientes"],
-        "summary": "Obtener un cliente por ID",
-        "security": [{ "BearerAuth": [] }],
         "parameters": [
           {
-            "name": "id",
             "in": "path",
+            "name": "id",
             "required": true,
-            "schema": { "type": "integer" },
-            "description": "ID del cliente a obtener"
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
-        "responses": {
-          "200": {
-            "description": "Cliente encontrado",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Client" }
-              }
-            }
-          },
-          "401": {
-            "description": "No autenticado",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
-              }
-            }
-          },
-          "404": {
-            "description": "Cliente no encontrado",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": ["Clientes"],
-        "summary": "Actualizar un cliente",
-        "security": [{ "BearerAuth": [] }],
-        "parameters": [
+        "security": [
           {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "ID del cliente a actualizar"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "nombre": {
-                    "type": "string",
-                    "description": "Nombre completo del cliente"
-                  },
-                  "ci_rut": {
-                    "type": "string",
-                    "description": "Cédula o RUT del cliente"
-                  },
-                  "email": {
-                    "type": "string",
-                    "format": "email",
-                    "description": "Correo electrónico del cliente"
-                  },
-                  "telefono": {
-                    "type": "string",
-                    "description": "Número de teléfono del cliente"
-                  },
-                  "direccion": {
-                    "type": "string",
-                    "description": "Dirección del cliente"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Cliente actualizado exitosamente",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Client" }
-              }
-            }
-          },
-          "401": {
-            "description": "No autenticado o no autorizado",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
-              }
-            }
-          },
-          "404": {
-            "description": "Cliente no encontrado",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": ["Clientes"],
-        "summary": "Eliminar un cliente",
-        "security": [{ "BearerAuth": [] }],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer" },
-            "description": "ID del cliente a eliminar"
+            "BearerAuth": []
           }
         ],
         "responses": {
-          "200": {
-            "description": "Cliente eliminado exitosamente",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string",
-                      "example": "Cliente eliminado correctamente"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "No autenticado o no autorizado",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
-              }
-            }
-          },
-          "404": {
-            "description": "Cliente no encontrado",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/kanban": {
-      "get": {
-        "tags": ["Kanban"],
-        "summary": "Listar trabajos para el tablero Kanban",
-        "security": [{ "ApiKeyAuth": [] }],
-        "parameters": [
-          { "name": "q", "in": "query", "description": "Término de búsqueda en código, descripción, cliente y trabajador", "schema": { "type": "string" } },
-          { "name": "workerId", "in": "query", "description": "Filtrar por ID de trabajador", "schema": { "type": "string", "format": "uuid" } },
-          { "name": "clientId", "in": "query", "description": "Filtrar por ID de cliente", "schema": { "type": "string", "format": "uuid" } },
-          { "name": "priority", "in": "query", "description": "Filtrar por prioridad", "schema": { "type": "string", "enum": ["BAJA", "MEDIA", "ALTA"] } },
-          { "name": "limit", "in": "query", "description": "Límite de tarjetas por columna (default 50, max 200)", "schema": { "type": "integer", "default": 50, "minimum": 1, "maximum": 200 } }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/KanbanColumns" } }
-            }
-          },
-          "401": { "description": "Missing/invalid API key" }
-        }
-      }
-    },
-    "/reportes/semanal": {
-      "get": {
-        "tags": ["Reportes"],
-        "summary": "Obtener reporte semanal",
-        "description": "Genera un reporte de la actividad semanal",
-        "security": [{ "BearerAuth": [] }],
-        "responses": {
-          "200": {
-            "description": "Reporte generado exitosamente",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "semana": {
-                      "type": "string",
-                      "description": "Semana del reporte"
-                    },
-                    "pedidos_completados": {
-                      "type": "integer",
-                      "description": "Número de pedidos completados"
-                    },
-                    "pedidos_en_progreso": {
-                      "type": "integer",
-                      "description": "Número de pedidos en progreso"
-                    },
-                    "tiempo_promedio": {
-                      "type": "number",
-                      "description": "Tiempo promedio de completación"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "No autenticado",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/reportes/mensual": {
-      "get": {
-        "tags": ["Reportes"],
-        "summary": "Obtener reporte mensual",
-        "description": "Genera un reporte de la actividad mensual",
-        "security": [{ "BearerAuth": [] }],
-        "responses": {
-          "200": {
-            "description": "Reporte generado exitosamente",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "mes": {
-                      "type": "string",
-                      "description": "Mes del reporte"
-                    },
-                    "pedidos_completados": {
-                      "type": "integer",
-                      "description": "Número de pedidos completados"
-                    },
-                    "pedidos_en_progreso": {
-                      "type": "integer",
-                      "description": "Número de pedidos en progreso"
-                    },
-                    "tiempo_promedio": {
-                      "type": "number",
-                      "description": "Tiempo promedio de completación"
-                    },
-                    "ingresos_totales": {
-                      "type": "number",
-                      "description": "Total de ingresos del mes"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "No autenticado",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/kanban/{id}/status": {
-      "patch": {
-        "tags": ["Kanban"],
-        "summary": "Cambiar el estado de un trabajo",
-        "security": [{ "ApiKeyAuth": [] }],
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "description": "ID del trabajo a actualizar", "schema": { "type": "string", "format": "uuid" } }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/ChangeStatusRequest" } }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Estado actualizado correctamente",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": { "type": "boolean" },
-                    "job": { "$ref": "#/components/schemas/KanbanCard" }
-                  }
-                }
-              }
-            }
-          },
-          "400": { "description": "Parámetros inválidos (ej. newStatus incorrecto)" },
-          "401": { "description": "Missing/invalid API key" },
-          "404": { "description": "Trabajo no encontrado" }
-        }
-      }
-    },
-    "/auth/register": {
-      "post": {
-        "tags": ["Auth"],
-        "summary": "Registrar un nuevo usuario",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/AuthRegisterRequest" } }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Usuario registrado exitosamente",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/AuthResponse" } }
-            }
-          },
-          "400": {
-            "description": "Email y password requeridos",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
-            }
-          },
-          "409": {
-            "description": "Email en uso",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
-            }
-          },
-          "500": {
-            "description": "Server error",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
-            }
-          }
-        }
-      }
-    },
-    "/auth/login": {
-      "post": {
-        "tags": ["Auth"],
-        "summary": "Iniciar sesión de usuario",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/AuthLoginRequest" } }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Inicio de sesión exitoso",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/AuthResponse" } }
-            }
-          },
-          "401": {
-            "description": "Credenciales inválidas",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
-            }
-          },
-          "500": {
-            "description": "Server error",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
-            }
+          "204": {
+            "description": "Eliminado"
           }
         }
       }
     }
-  }
+  },
+  "tags": []
 }

@@ -8,7 +8,8 @@
     "start": "node src/server.ts",
     "build": "tsc",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev --name init"
+    "prisma:migrate": "prisma migrate dev --name init",
+    "openapi:generate": "tsx generate-openapi.ts"
   },
   "keywords": [],
   "author": "",

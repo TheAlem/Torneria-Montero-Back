@@ -1,7 +1,7 @@
 import { prisma } from '../prisma/client';
-import { CreateJobBody } from '../validators/jobValidator';
+import { CreatePedidoBody } from '../validators/pedidoValidator';
 
-export async function createJob(payload: CreateJobBody) {
+export async function createPedido(payload: CreatePedidoBody) {
   const data: any = {
     descripcion: payload.descripcion,
     prioridad: payload.prioridad,
