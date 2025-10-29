@@ -31,7 +31,7 @@ export const crear = async (req: Request, res: Response, next: NextFunction) => 
     const pedido = await PedidoService.createPedido(req.body);
     return success(res, pedido, 201);
   } catch (err: any) {
-    if (err?.name === 'ZodError') return fail(res, 'VALIDATION_ERROR', JSON.stringify(err.errors), 400);
+    if (err?.name === 'ZodError') return fail(res, 'VALIDATION_ERROR', 'Error de validación', 400, err.errors);
     next(err);
   }
 };

@@ -13,8 +13,8 @@ export const listar = async (req: Request, res: Response, next: NextFunction) =>
 export const obtener = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = Number(req.params.id);
-    const w = await prisma.trabajadores.findUnique({ where: { id }, include: { pedidosResponsable: true } });
-    if (!w) return fail(res, 'NOT_FOUND', 'Not found', 404);
+    const w = await prisma.trabajadores.findUnique({ where: { id }, include: { pedidosResponsable: true, usuario: true } });
+    if (!w) return fail(res, 'NOT_FOUND', 'Trabajador no encontrado', 404);
     return success(res, w);
   } catch (err) { next(err); }
 };

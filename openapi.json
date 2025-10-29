@@ -25,12 +25,17 @@
             "type": "string",
             "example": "success"
           },
-          "data": {
-            "type": "object"
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
           },
-          "error": {
+          "data": {
             "type": [
               "object",
+              "array",
               "null"
             ]
           }
@@ -43,22 +48,26 @@
             "type": "string",
             "example": "error"
           },
+          "code": {
+            "type": "string",
+            "example": "VALIDATION_ERROR"
+          },
+          "message": {
+            "type": "string",
+            "example": "Error de validación"
+          },
           "data": {
             "type": [
               "object",
               "null"
             ]
           },
-          "error": {
-            "type": "object",
-            "properties": {
-              "code": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              }
-            }
+          "errors": {
+            "type": [
+              "object",
+              "array"
+            ],
+            "nullable": true
           }
         }
       },
@@ -175,8 +184,10 @@
                     "enum": [
                       "ADMIN",
                       "TORNERO",
-                      "CLIENTE"
-                    ]
+                      "CLIENTE",
+                      "TRABAJADOR"
+                    ],
+                    "description": "CLIENTE por defecto. Si TRABAJADOR, crea registro en trabajadores y no devuelve token. ci_rut es requerido cuando rol=TRABAJADOR."
                   },
                   "ci_rut": {
                     "type": "string"
@@ -233,6 +244,78 @@
         "responses": {
           "200": {
             "description": "Login exitoso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/admin/users": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Crear usuario TORNERO o TRABAJADOR (solo ADMIN)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email",
+                  "password",
+                  "rol"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "nombre": {
+                    "type": "string"
+                  },
+                  "telefono": {
+                    "type": "string"
+                  },
+                  "direccion": {
+                    "type": "string"
+                  },
+                  "rol": {
+                    "type": "string",
+                    "enum": [
+                      "TORNERO",
+                      "TRABAJADOR",
+                      "ADMIN"
+                    ]
+                  },
+                  "ci_rut": {
+                    "type": "string",
+                    "description": "Requerido cuando rol=TRABAJADOR"
+                  },
+                  "rol_tecnico": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Usuario creado",
             "content": {
               "application/json": {
                 "schema": {

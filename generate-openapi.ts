@@ -17,16 +17,18 @@ const swaggerOptions = {
                     type: 'object',
                     properties: {
                         status: { type: 'string', example: 'success' },
-                        data: { type: 'object' },
-                        error: { type: ['object', 'null'] }
+                        message: { type: ['string', 'null'], example: null },
+                        data: { type: ['object', 'array', 'null'] },
                     }
                 },
                 UnifiedError: {
                     type: 'object',
                     properties: {
                         status: { type: 'string', example: 'error' },
+                        code: { type: 'string', example: 'VALIDATION_ERROR' },
+                        message: { type: 'string', example: 'Error de validación' },
                         data: { type: ['object', 'null'] },
-                        error: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } } }
+                        errors: { type: ['object', 'array'], nullable: true }
                     }
                 },
                 Client: { type: 'object', properties: { id: { type: 'integer' }, nombre: { type: 'string' }, telefono: { type: 'string' } } },
