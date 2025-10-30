@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction  } from "express";
 import { prisma } from '../prisma/client';
 import * as PedidoService from '../services/PedidoService';
 import { success, fail } from '../utils/response';
+import { UpdatePedidoSchema } from '../validators/pedidoValidator';
 
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -39,9 +40,24 @@ export const crear = async (req: Request, res: Response, next: NextFunction) => 
 export const actualizar = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = Number(req.params.id);
-    const data = req.body;
+    const parsed = UpdatePedidoSchema.safeParse(req.body);
+    if (!parsed.success) return fail(res, 'VALIDATION_ERROR', 'Datos inválidos', 400, parsed.error.flatten());
+    const body = parsed.data as any;
+    const data: any = {};
+    if (typeof body.descripcion !== 'undefined') data.descripcion = body.descripcion;
+    if (typeof body.prioridad !== 'undefined') data.prioridad = body.prioridad;
+    if (typeof body.precio !== 'undefined') data.precio = body.precio;
+    if (typeof body.fecha_estimada_fin !== 'undefined') data.fecha_estimada_fin = body.fecha_estimada_fin ? new Date(body.fecha_estimada_fin) : null;
+    if (typeof body.estado !== 'undefined') data.estado = body.estado;
+    if (typeof body.responsable_id !== 'undefined') data.responsable_id = body.responsable_id;
+    if (typeof body.semaforo !== 'undefined') data.semaforo = body.semaforo;
+    if (typeof body.notas !== 'undefined') data.notas = body.notas;
+    if (typeof body.adjuntos !== 'undefined') data.adjuntos = body.adjuntos;
+
+    if (Object.keys(data).length === 0) return fail(res, 'VALIDATION_ERROR', 'No hay campos para actualizar', 400);
+
     const pedido = await prisma.pedidos.update({ where: { id }, data });
-    return success(res, pedido);
+    return success(res, pedido, 200, 'Pedido actualizado');
   } catch (err) { next(err); }
 };
 

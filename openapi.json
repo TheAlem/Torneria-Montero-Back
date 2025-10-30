@@ -739,6 +739,69 @@
             "BearerAuth": []
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "descripcion": {
+                    "type": "string"
+                  },
+                  "prioridad": {
+                    "type": "string",
+                    "enum": [
+                      "BAJA",
+                      "MEDIA",
+                      "ALTA"
+                    ]
+                  },
+                  "precio": {
+                    "type": "number",
+                    "nullable": true
+                  },
+                  "fecha_estimada_fin": {
+                    "type": "string",
+                    "description": "YYYY-MM-DD",
+                    "nullable": true
+                  },
+                  "estado": {
+                    "type": "string",
+                    "enum": [
+                      "PENDIENTE",
+                      "ASIGNADO",
+                      "EN_PROGRESO",
+                      "QA",
+                      "ENTREGADO"
+                    ]
+                  },
+                  "responsable_id": {
+                    "type": "integer",
+                    "nullable": true
+                  },
+                  "semaforo": {
+                    "type": "string",
+                    "enum": [
+                      "VERDE",
+                      "AMARILLO",
+                      "ROJO"
+                    ]
+                  },
+                  "notas": {
+                    "type": "string"
+                  },
+                  "adjuntos": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Pedido actualizado",
