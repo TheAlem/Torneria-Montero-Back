@@ -8,9 +8,12 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-/* ========================
-   ENUMS
-   ======================== */
+
+/**
+ * ========================
+ * ENUMS
+ * ========================
+ */
 
 enum RolUsuario {
   CLIENTE
@@ -62,192 +65,212 @@ enum EstadoTiempo {
   CERRADO
 }
 
-/* ========================
-   MODELOS (equivalente a las tablas SQL que has propuesto)
-   - IDs como Int autoincrement (SERIAL)
-   - Duraciones se almacenan como segundos (Int)
-   - Campos JSONB -> Json
-   - Arrays de texto -> String[]
-   ======================== */
+/**
+ * ========================
+ * MODELOS (equivalente a las tablas SQL que has propuesto)
+ * - IDs como Int autoincrement (SERIAL)
+ * - Duraciones se almacenan como segundos (Int)
+ * - Campos JSONB -> Json
+ * - Arrays de texto -> String[]
+ * ========================
+ */
 
 model usuarios {
-  id              Int      @id @default(autoincrement())
-  nombre          String   @db.VarChar(100)
-  email           String   @unique @db.VarChar(100)
-  telefono        String?  @db.VarChar(20)
-  password_hash   String
-  rol             RolUsuario
-  estado          String   @default("Activo") @db.VarChar(20)
-  fecha_creacion  DateTime @default(now())
-  ultimo_acceso   DateTime?
+  id             Int        @id @default(autoincrement())
+  nombre         String     @db.VarChar(100)
+  email          String     @unique @db.VarChar(100)
+  telefono       String?    @db.VarChar(20)
+  password_hash  String
+  rol            RolUsuario
+  estado         String     @default("Activo") @db.VarChar(20)
+  fecha_creacion DateTime   @default(now())
+  ultimo_acceso  DateTime?
 
   // Relaciones 1-1
-  trabajador      trabajadores? @relation("UsuarioTrabajador")
-  cliente         clientes? @relation("UsuarioCliente")
+  trabajador trabajadores? @relation("UsuarioTrabajador")
+  cliente    clientes?     @relation("UsuarioCliente")
 
   // Relaciones inversas / de actividad
-  creadoPedidos        pedidos[] @relation("creador")
-  actualizadoPedidos   pedidos[] @relation("actualizador")
-  tiemposRegistrados   tiempos[]
-  reportesGenerados    reportes[]
+  creadoPedidos                pedidos[]           @relation("creador")
+  actualizadoPedidos           pedidos[]           @relation("actualizador")
+  tiemposRegistrados           tiempos[]
+  reportesGenerados            reportes[]
+  tokens_onboarding_consumidos onboarding_tokens[] @relation("OnboardingConsumidor")
 }
 
 model trabajadores {
-  id               Int     @id @default(autoincrement())
-  usuario_id       Int     @unique
-  usuario          usuarios @relation("UsuarioTrabajador", fields: [usuario_id], references: [id], onDelete: Cascade)
-  ci               String  @unique @db.VarChar(20)
-  direccion        String?
-  rol_tecnico      String? @db.VarChar(50)
-  estado           String  @default("Activo") @db.VarChar(20)
-  fecha_ingreso    DateTime?
-  skills           Json?
-  disponibilidad   Json?
-  carga_actual     Int     @default(0)
-  notas            String?
+  id             Int       @id @default(autoincrement())
+  usuario_id     Int       @unique
+  usuario        usuarios  @relation("UsuarioTrabajador", fields: [usuario_id], references: [id], onDelete: Cascade)
+  ci             String    @unique @db.VarChar(20)
+  direccion      String?
+  rol_tecnico    String?   @db.VarChar(50)
+  estado         String    @default("Activo") @db.VarChar(20)
+  fecha_ingreso  DateTime?
+  skills         Json?
+  disponibilidad Json?
+  carga_actual   Int       @default(0)
+  notas          String?
 
-  pedidosResponsable pedidos[] @relation("responsable")
+  pedidosResponsable pedidos[]             @relation("responsable")
   asignaciones       asignaciones[]
   tiempos            tiempos[]
   predicciones       predicciones_tiempo[]
 }
 
 model clientes {
-  id             Int      @id @default(autoincrement())
-  usuario_id     Int?     @unique
+  id             Int       @id @default(autoincrement())
+  usuario_id     Int?      @unique
   usuario        usuarios? @relation("UsuarioCliente", fields: [usuario_id], references: [id], onDelete: SetNull)
-  nombre         String   @db.VarChar(120)
-  ci_rut         String?  @unique @db.VarChar(20)
-  email          String?  @db.VarChar(100)
-  telefono       String?  @db.VarChar(20)
+  nombre         String    @db.VarChar(120)
+  ci_rut         String?   @unique @db.VarChar(20)
+  email          String?   @db.VarChar(100)
+  telefono       String?   @db.VarChar(20)
   direccion      String?
-  estado         String   @default("Activo") @db.VarChar(20)
-  fecha_registro DateTime @default(now())
+  estado         String    @default("Activo") @db.VarChar(20)
+  fecha_registro DateTime  @default(now())
   device_id      String?
-  origen         String   @default("QR") @db.VarChar(30)
-  verificado     Boolean  @default(false)
+  origen         String    @default("QR") @db.VarChar(30)
+  verificado     Boolean   @default(false)
 
-  pedidos        pedidos[]
-  notificaciones  notificaciones[]
+  pedidos           pedidos[]
+  notificaciones    notificaciones[]
+  tokens_onboarding onboarding_tokens[] @relation("OnboardingCliente")
 }
 
 model pedidos {
-  id                   Int       @id @default(autoincrement())
-  cliente_id           Int
-  cliente              clientes  @relation(fields: [cliente_id], references: [id])
-  descripcion          String
-  prioridad            Prioridad @default(MEDIA)
-  precio               Decimal?  @db.Decimal(10,2)
-  fecha_inicio         DateTime  @default(now())
-  fecha_estimada_fin   DateTime?
-  estado               EstadoPedido @default(PENDIENTE)
-  responsable_id       Int? 
-  responsable          trabajadores? @relation("responsable", fields: [responsable_id], references: [id])
-  semaforo             Semaforo  @default(VERDE)
-  notas                String?
-  adjuntos             String[]
-  tiempo_estimado_sec  Int?
-  tiempo_real_sec      Int?
-  creado_por_id        Int?
-  creado_por           usuarios? @relation("creador", fields: [creado_por_id], references: [id])
-  actualizado_por_id   Int?
-  actualizado_por      usuarios? @relation("actualizador", fields: [actualizado_por_id], references: [id])
-  fecha_actualizacion  DateTime  @updatedAt
-  eliminado            Boolean   @default(false)
+  id                  Int           @id @default(autoincrement())
+  cliente_id          Int
+  cliente             clientes      @relation(fields: [cliente_id], references: [id])
+  descripcion         String
+  prioridad           Prioridad     @default(MEDIA)
+  precio              Decimal?      @db.Decimal(10, 2)
+  fecha_inicio        DateTime      @default(now())
+  fecha_estimada_fin  DateTime?
+  estado              EstadoPedido  @default(PENDIENTE)
+  responsable_id      Int?
+  responsable         trabajadores? @relation("responsable", fields: [responsable_id], references: [id])
+  semaforo            Semaforo      @default(VERDE)
+  notas               String?
+  adjuntos            String[]
+  tiempo_estimado_sec Int?
+  tiempo_real_sec     Int?
+  creado_por_id       Int?
+  creado_por          usuarios?     @relation("creador", fields: [creado_por_id], references: [id])
+  actualizado_por_id  Int?
+  actualizado_por     usuarios?     @relation("actualizador", fields: [actualizado_por_id], references: [id])
+  fecha_actualizacion DateTime      @updatedAt
+  eliminado           Boolean       @default(false)
 
-  asignaciones         asignaciones[]
-  tiempos              tiempos[]
-  notificaciones       notificaciones[]
-  alertas              alertas[]
-  predicciones         predicciones_tiempo[]
+  asignaciones   asignaciones[]
+  tiempos        tiempos[]
+  notificaciones notificaciones[]
+  alertas        alertas[]
+  predicciones   predicciones_tiempo[]
 
   @@index([estado, prioridad, fecha_estimada_fin], name: "idx_pedidos_kanban")
 }
 
 model asignaciones {
-  id                Int      @id @default(autoincrement())
-  pedido_id         Int
-  pedido            pedidos  @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
-  trabajador_id     Int
-  trabajador        trabajadores @relation(fields: [trabajador_id], references: [id])
-  score_sugerencia  Float?
-  skill_match       Float?
+  id                  Int              @id @default(autoincrement())
+  pedido_id           Int
+  pedido              pedidos          @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
+  trabajador_id       Int
+  trabajador          trabajadores     @relation(fields: [trabajador_id], references: [id])
+  score_sugerencia    Float?
+  skill_match         Float?
   tiempo_estimado_sec Int?
-  origen            OrigenAsignacion @default(MANUAL)
-  fecha_asignacion  DateTime @default(now())
-  estado            String   @default("Asignado")
-  comentarios       String?
+  origen              OrigenAsignacion @default(MANUAL)
+  fecha_asignacion    DateTime         @default(now())
+  estado              String           @default("Asignado")
+  comentarios         String?
 }
 
 model tiempos {
-  id             Int      @id @default(autoincrement())
+  id             Int          @id @default(autoincrement())
   pedido_id      Int
-  pedido         pedidos  @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
+  pedido         pedidos      @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
   trabajador_id  Int
   trabajador     trabajadores @relation(fields: [trabajador_id], references: [id])
-  categoria      String   @default("Producción")
+  categoria      String       @default("Producción")
   inicio         DateTime?
   fin            DateTime?
   duracion_sec   Int?
   estado         EstadoTiempo @default(CERRADO)
   registrado_por Int?
-  registradoPor  usuarios? @relation(fields: [registrado_por], references: [id])
+  registradoPor  usuarios?    @relation(fields: [registrado_por], references: [id])
 }
 
 model notificaciones {
-  id            Int      @id @default(autoincrement())
-  pedido_id     Int
-  pedido        pedidos  @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
-  cliente_id    Int
-  cliente       clientes @relation(fields: [cliente_id], references: [id])
-  mensaje       String
-  tipo          TipoNotificacion @default(INFO)
-  leida         Boolean  @default(false)
-  fecha_creacion DateTime @default(now())
+  id             Int              @id @default(autoincrement())
+  pedido_id      Int
+  pedido         pedidos          @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
+  cliente_id     Int
+  cliente        clientes         @relation(fields: [cliente_id], references: [id])
+  mensaje        String
+  tipo           TipoNotificacion @default(INFO)
+  leida          Boolean          @default(false)
+  fecha_creacion DateTime         @default(now())
 }
 
 model alertas {
-  id          Int      @id @default(autoincrement())
+  id          Int             @id @default(autoincrement())
   pedido_id   Int?
-  pedido      pedidos? @relation(fields: [pedido_id], references: [id])
+  pedido      pedidos?        @relation(fields: [pedido_id], references: [id])
   tipo        String?
   severidad   SeveridadAlerta
   descripcion String?
-  fecha       DateTime @default(now())
-  atendida    Boolean  @default(false)
+  fecha       DateTime        @default(now())
+  atendida    Boolean         @default(false)
 }
 
 model reportes {
-  id               Int      @id @default(autoincrement())
+  id               Int       @id @default(autoincrement())
   tipo             String
   parametros       Json?
-  fecha_generacion DateTime @default(now())
+  fecha_generacion DateTime  @default(now())
   generado_por_id  Int?
   generado_por     usuarios? @relation(fields: [generado_por_id], references: [id])
   ruta_archivo     String?
 }
 
 model predicciones_tiempo {
-  id                Int      @id @default(autoincrement())
+  id                Int               @id @default(autoincrement())
   pedido_id         Int
-  pedido            pedidos  @relation(fields: [pedido_id], references: [id])
+  pedido            pedidos           @relation(fields: [pedido_id], references: [id])
   trabajador_id     Int
-  trabajador        trabajadores @relation(fields: [trabajador_id], references: [id])
+  trabajador        trabajadores      @relation(fields: [trabajador_id], references: [id])
   t_estimado_sec    Int?
   t_real_sec        Int?
   desvio            Float?
-  modelo_version    String   @default("v1.0")
-  fecha_calculo     DateTime @default(now())
+  modelo_version    String            @default("v1.0")
+  fecha_calculo     DateTime          @default(now())
   historicoModeloId Int?
   historico_modelo  historico_modelo? @relation(fields: [historicoModeloId], references: [id])
 }
 
 model historico_modelo {
-  id                 Int      @id @default(autoincrement())
-  fecha_entrenamiento DateTime @default(now())
-  total_pedidos      Int?
-  mae                Float?
-  precision          Float?
-  parametros         Json?
-  predicciones       predicciones_tiempo[]
+  id                  Int                   @id @default(autoincrement())
+  fecha_entrenamiento DateTime              @default(now())
+  total_pedidos       Int?
+  mae                 Float?
+  precision           Float?
+  parametros          Json?
+  predicciones        predicciones_tiempo[]
+}
+
+// Token de Onboarding para app móvil vía QR
+model onboarding_tokens {
+  id          Int       @id @default(autoincrement())
+  cliente_id  Int
+  cliente     clientes  @relation("OnboardingCliente", fields: [cliente_id], references: [id], onDelete: Cascade)
+  token       String    @unique @db.VarChar(100)
+  created_at  DateTime  @default(now())
+  expires_at  DateTime
+  used_at     DateTime?
+  consumed_by Int?
+  consumidor  usuarios? @relation("OnboardingConsumidor", fields: [consumed_by], references: [id])
+
+  @@index([cliente_id], name: "idx_onboarding_cliente")
+  @@index([expires_at], name: "idx_onboarding_expira")
 }

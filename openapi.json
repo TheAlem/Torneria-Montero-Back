@@ -388,6 +388,54 @@
         }
       }
     },
+    "/api/clientes/buscar": {
+      "get": {
+        "tags": [
+          "Clientes"
+        ],
+        "summary": "Buscar cliente por CI o sugerencias por nombre/teléfono",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ci_rut",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "nombre",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "telefono",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado de búsqueda (match exacto o candidatos)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/clientes/{id}": {
       "get": {
         "tags": [
@@ -615,6 +663,95 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/clientes/{id}/onboarding": {
+      "post": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Crear token de onboarding y URL para QR",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Token creado"
+          }
+        }
+      }
+    },
+    "/api/onboarding/{token}": {
+      "get": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Validar token de onboarding (para la app)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Datos mínimos del cliente"
+          }
+        }
+      }
+    },
+    "/api/onboarding/{token}/complete": {
+      "post": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Completar onboarding creando contraseña del cliente",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Usuario creado y sesión iniciada"
           }
         }
       }

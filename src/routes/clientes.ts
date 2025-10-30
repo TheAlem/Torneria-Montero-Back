@@ -25,6 +25,35 @@ router.get('/', authenticate, ctrl.listar);
 
 /**
  * @openapi
+ * /api/clientes/buscar:
+ *   get:
+ *     tags:
+ *       - Clientes
+ *     summary: Buscar cliente por CI o sugerencias por nombre/teléfono
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: ci_rut
+ *         schema: { type: string }
+ *       - in: query
+ *         name: nombre
+ *         schema: { type: string }
+ *       - in: query
+ *         name: telefono
+ *         schema: { type: string }
+ *     responses:
+ *       '200':
+ *         description: Resultado de búsqueda (match exacto o candidatos)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnifiedSuccess'
+ */
+router.get('/buscar', authenticate, ctrl.buscar);
+
+/**
+ * @openapi
  * /api/clientes:
  *   post:
  *     tags:
