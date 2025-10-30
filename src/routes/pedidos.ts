@@ -140,4 +140,43 @@ router.put('/:id', authenticate, ctrl.actualizar);
  */
 router.delete('/:id', authenticate, ctrl.eliminar);
 
+/**
+ * @openapi
+ * /api/pedidos/{id}/estado:
+ *   patch:
+ *     tags:
+ *       - Pedidos
+ *     summary: Cambiar estado del pedido (drag & drop Kanban)
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               estado:
+ *                 type: string
+ *                 enum: [PENDIENTE, ASIGNADO, EN_PROGRESO, QA, ENTREGADO]
+ *               note:
+ *                 type: string
+ *               userId:
+ *                 type: integer
+ *     responses:
+ *       '200':
+ *         description: Estado actualizado y métricas recalculadas
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnifiedSuccess'
+ */
+router.patch('/:id/estado', authenticate, ctrl.cambiarEstado);
+
 export default router;

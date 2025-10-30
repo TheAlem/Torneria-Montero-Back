@@ -3,6 +3,7 @@ import { prisma } from '../prisma/client';
 import { success, fail } from '../utils/response';
 import { logger } from '../utils/logger';
 import { evaluateAndNotify } from '../services/KanbanMonitorService';
+import { transitionEstado } from '../services/PedidoWorkflow';
 // enum types from Prisma removed to avoid direct dependency on generated client
 
 // Common select for kanban cards to ensure consistency
@@ -11,6 +12,7 @@ const kanbanCardSelect = {
   descripcion: true,
   prioridad: true,
   estado: true,
+  semaforo: true,
   fecha_estimada_fin: true,
   fecha_actualizacion: true,
   cliente: { select: { id: true, nombre: true, telefono: true } },
@@ -57,14 +59,15 @@ export const listarKanban = async (req: Request, res: Response, next: NextFuncti
       return map[s] ?? s;
     };
 
-    const [pending, inProgress, qa, delivered] = await Promise.all([
+    const [pending, assigned, inProgress, qa, delivered] = await Promise.all([
       prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('PENDIENTE') }, select: kanbanCardSelect, orderBy: [{ prioridad: 'desc' }, { fecha_actualizacion: 'desc' }], take: parsedLimit }),
+      prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('ASIGNADO') }, select: kanbanCardSelect, orderBy: [{ prioridad: 'desc' }, { fecha_actualizacion: 'desc' }], take: parsedLimit }),
       prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('EN_PROGRESO') }, select: kanbanCardSelect, orderBy: [{ prioridad: 'desc' }, { fecha_actualizacion: 'desc' }], take: parsedLimit }),
       prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('QA') }, select: kanbanCardSelect, orderBy: { fecha_actualizacion: 'desc' }, take: parsedLimit }),
       prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('ENTREGADO') }, select: kanbanCardSelect, orderBy: { fecha_actualizacion: 'desc' }, take: parsedLimit }),
     ]);
 
-  return success(res, { columns: { PENDIENTE: pending, EN_PROGRESO: inProgress, QA: qa, ENTREGADO: delivered } });
+  return success(res, { columns: { PENDIENTE: pending, ASIGNADO: assigned, EN_PROGRESO: inProgress, QA: qa, ENTREGADO: delivered } });
   } catch (err) {
     next(err);
   }
@@ -78,8 +81,8 @@ export const cambiarEstado = async (req: Request, res: Response, next: NextFunct
     const { id } = req.params;
     const { newStatus, note, userId } = req.body;
 
-  const pedido = await prisma.pedidos.update({ where: { id: Number(id) }, data: { estado: newStatus } });
-  logger.info({ msg: 'Estado cambiado', id, newStatus, userId });
+  const pedido = await transitionEstado(Number(id), newStatus, { note, userId });
+  logger.info({ msg: '[Kanban] Estado cambiado', id, newStatus, userId });
   return success(res, { ok: true, pedido });
   } catch (err) {
     next(err);

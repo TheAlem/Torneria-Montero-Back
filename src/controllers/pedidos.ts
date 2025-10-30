@@ -3,6 +3,7 @@ import { prisma } from '../prisma/client';
 import * as PedidoService from '../services/PedidoService';
 import { success, fail } from '../utils/response';
 import { UpdatePedidoSchema } from '../validators/pedidoValidator';
+import { transitionEstado } from '../services/PedidoWorkflow';
 
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -66,5 +67,15 @@ export const eliminar = async (req: Request, res: Response, next: NextFunction) 
     const id = Number(req.params.id);
     await prisma.pedidos.delete({ where: { id } });
     return success(res, null, 204);
+  } catch (err) { next(err); }
+};
+
+export const cambiarEstado = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = Number(req.params.id);
+    const { estado, note, userId } = req.body as { estado: 'PENDIENTE'|'ASIGNADO'|'EN_PROGRESO'|'QA'|'ENTREGADO'; note?: string; userId?: number };
+    if (!estado) return fail(res, 'VALIDATION_ERROR', 'Debe indicar el nuevo estado', 400);
+    const pedido = await transitionEstado(id, estado, { note, userId });
+    return success(res, { ok: true, pedido }, 200, 'Estado actualizado');
   } catch (err) { next(err); }
 };
