@@ -89,8 +89,12 @@ router.put('/:id', authenticate, requireRole('admin','tornero'), ctrl.actualizar
  *     security:
  *       - BearerAuth: []
  *     responses:
- *       '204':
+ *       '200':
  *         description: Eliminado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnifiedSuccess'
  */
 router.delete('/:id', authenticate, requireRole('admin'), ctrl.eliminar);
 

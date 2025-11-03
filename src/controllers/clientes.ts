@@ -1,6 +1,6 @@
-import type { Request, Response, NextFunction  } from "express";
+import type { Request, Response, NextFunction } from 'express';
 import { prisma } from '../prisma/client';
-import { success, fail } from '../utils/response';
+import { success, fail, fieldsValidation } from '../utils/response';
 
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -44,11 +44,16 @@ export const buscar = async (req: Request, res: Response, next: NextFunction) =>
 export const crear = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { nombre, email, telefono, direccion, ci_rut } = req.body;
-    if (!nombre || !telefono) return fail(res, 'VALIDATION_ERROR', 'nombre y telefono son requeridos', 400);
+    if (!nombre || !telefono) {
+      const errors: any = {};
+      if (!nombre) errors.nombre = 'El campo nombre es obligatorio.';
+      if (!telefono) errors.telefono = 'El campo teléfono es obligatorio.';
+      return fieldsValidation(res, errors);
+    }
     const client = await prisma.clientes.create({ data: { nombre, email: email || null, telefono, direccion: direccion || null, ci_rut: ci_rut || null } });
     return success(res, client, 201);
   } catch (err: any) {
-    if (err?.code === 'P2002') return fail(res, 'CONFLICT', 'Valor único en conflicto', 409);
+    if (err?.code === 'P2002') return fail(res, 'UNIQUE_CONSTRAINT', 'Ya existe un registro con estos datos únicos.', 409);
     next(err);
   }
 };
@@ -64,17 +69,22 @@ export const obtener = async (req: Request, res: Response, next: NextFunction) =
 
 export const actualizar = async (req: Request, res: Response, next: NextFunction) => {
   try {
-  const id = Number(req.params.id);
-  const { name, email, phone, address } = req.body;
-  const client = await prisma.clientes.update({ where: { id }, data: { nombre: name, email, telefono: phone, direccion: address } });
+    const id = Number(req.params.id);
+    const { name, email, phone, address } = req.body;
+    const client = await prisma.clientes.update({ where: { id }, data: { nombre: name, email, telefono: phone, direccion: address } });
     return success(res, client);
   } catch (err) { next(err); }
 };
 
 export const eliminar = async (req: Request, res: Response, next: NextFunction) => {
   try {
-  const id = Number(req.params.id);
-  await prisma.clientes.delete({ where: { id } });
-    return success(res, null, 204);
-  } catch (err) { next(err); }
+    const id = Number(req.params.id);
+    await prisma.clientes.delete({ where: { id } });
+    return success(res, null, 200, 'Cliente eliminado');
+  } catch (err: any) {
+    if (err?.code === 'P2025') return fail(res, 'NOT_FOUND', 'Cliente no encontrado', 404);
+    if (err?.code === 'P2003') return fail(res, 'CONFLICT', 'No se puede eliminar el cliente porque tiene registros asociados.', 409);
+    next(err);
+  }
 };
+

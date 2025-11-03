@@ -75,6 +75,12 @@ router.get('/:id', authenticate, ctrl.getById);
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/UnifiedSuccess'
+ *       '422':
+ *         description: Error de validación de campos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/FieldsValidation'
  */
 router.post('/', authenticate, ctrl.crear);
 
@@ -116,6 +122,12 @@ router.post('/', authenticate, ctrl.crear);
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/UnifiedSuccess'
+ *       '422':
+ *         description: Error de validación de campos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/FieldsValidation'
  */
 router.put('/:id', authenticate, ctrl.actualizar);
 
@@ -135,8 +147,12 @@ router.put('/:id', authenticate, ctrl.actualizar);
  *     security:
  *       - BearerAuth: []
  *     responses:
- *       '204':
+ *       '200':
  *         description: Eliminado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnifiedSuccess'
  */
 router.delete('/:id', authenticate, ctrl.eliminar);
 

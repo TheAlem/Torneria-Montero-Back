@@ -213,6 +213,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Error de validación de campos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldsValidation"
+                }
+              }
+            }
           }
         }
       }
@@ -323,6 +333,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Error de validación de campos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldsValidation"
+                }
+              }
+            }
           }
         }
       }
@@ -381,6 +401,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error de validación de campos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldsValidation"
                 }
               }
             }
@@ -524,8 +554,15 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "Eliminado"
+          "200": {
+            "description": "Eliminado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
           }
         }
       }
@@ -815,6 +852,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Error de validación de campos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldsValidation"
+                }
+              }
+            }
           }
         }
       }
@@ -949,6 +996,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Error de validación de campos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldsValidation"
+                }
+              }
+            }
           }
         }
       },
@@ -973,8 +1030,78 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "Eliminado"
+          "200": {
+            "description": "Eliminado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pedidos/{id}/estado": {
+      "patch": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Cambiar estado del pedido (drag & drop Kanban)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "estado": {
+                    "type": "string",
+                    "enum": [
+                      "PENDIENTE",
+                      "ASIGNADO",
+                      "EN_PROGRESO",
+                      "QA",
+                      "ENTREGADO"
+                    ]
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Estado actualizado y métricas recalculadas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
           }
         }
       }
@@ -1142,8 +1269,15 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "Eliminado"
+          "200": {
+            "description": "Eliminado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSuccess"
+                }
+              }
+            }
           }
         }
       }

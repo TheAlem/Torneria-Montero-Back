@@ -77,6 +77,12 @@ router.get('/buscar', authenticate, ctrl.buscar);
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/UnifiedSuccess'
+ *       '422':
+ *         description: Error de validación de campos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/FieldsValidation'
  */
 router.post('/', ctrl.crear);
 
@@ -146,8 +152,12 @@ router.put('/:id', authenticate, requireRole('admin'), ctrl.actualizar);
  *     security:
  *       - BearerAuth: []
  *     responses:
- *       '204':
+ *       '200':
  *         description: Eliminado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnifiedSuccess'
  */
 router.delete('/:id', authenticate, requireRole('admin'), ctrl.eliminar);
 

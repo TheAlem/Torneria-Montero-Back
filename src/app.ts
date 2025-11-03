@@ -48,18 +48,26 @@ const swaggerOptions = {
                     type: 'object',
                     properties: {
                         status: { type: 'string', example: 'success' },
-                        message: { type: ['string', 'null'], example: null },
-                        data: { type: ['object', 'array', 'null'] },
+                        data: { oneOf: [ { type: 'object' }, { type: 'array' }, { type: 'null' } ] },
+                        message: { type: 'string', example: '' },
                     }
                 },
                 UnifiedError: {
                     type: 'object',
                     properties: {
                         status: { type: 'string', example: 'error' },
-                        code: { type: 'string', example: 'VALIDATION_ERROR' },
+                        data: { type: ['object', 'null'], example: null },
                         message: { type: 'string', example: 'Error de validación' },
-                        data: { type: ['object', 'null'] },
+                        code: { type: 'string', example: 'VALIDATION_ERROR' },
                         errors: { type: ['object', 'array'], nullable: true }
+                    }
+                },
+                FieldsValidation: {
+                    type: 'object',
+                    properties: {
+                        status: { type: 'string', example: 'fields-validation' },
+                        data: { type: 'object', additionalProperties: true },
+                        message: { type: 'string', example: '' }
                     }
                 },
                 Client: { type: 'object', properties: { id: { type: 'integer' }, nombre: { type: 'string' }, telefono: { type: 'string' } } },
@@ -83,31 +91,31 @@ try {
 		const raw = fs.readFileSync(rootPath, { encoding: 'utf8' });
 		swaggerSpec = JSON.parse(raw);
 		app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-		console.log('🔁 Swagger UI cargada desde openapi.json');
+		console.log('Swagger UI cargada desde openapi.json');
 	} else {
 		// Fallback: generar spec desde JSDoc
-		console.log('🔍 openapi.json no encontrado — generando spec desde JSDoc...');
+		console.log('openapi.json no encontrado — generando spec desde JSDoc...');
 		try {
 			swaggerSpec = swaggerJSDoc({
 				...swaggerOptions,
 				apis: ['./src/**/*.ts']
 			});
 			app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-			console.log('✅ Swagger UI montada en /docs (generada desde JSDoc)');
+			console.log('Swagger UI montada en /docs (generada desde JSDoc)');
 		} catch (err) {
-			console.error('❌ Error al inicializar Swagger desde JSDoc:', err);
+			console.error('Error al inicializar Swagger desde JSDoc:', err);
 			const emptySpec = { openapi: '3.0.0', info: { title: 'API Documentation', version: '1.0.0' }, paths: {} };
 			app.use('/docs', swaggerUi.serve, swaggerUi.setup(emptySpec));
 		}
 	}
 } catch (e) {
-	console.warn('⚠️ Error al cargar o parsear openapi.json:', e);
+	console.warn('Error al cargar o parsear openapi.json:', e);
 	try {
 		swaggerSpec = swaggerJSDoc({ ...swaggerOptions, apis: ['./src/**/*.ts'] });
 		app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-		console.log('✅ Swagger UI montada en /docs (fallback JSDoc)');
+		console.log('Swagger UI montada en /docs (fallback JSDoc)');
 	} catch (err) {
-		console.error('❌ Error al inicializar Swagger (fallback):', err);
+		console.error('Error al inicializar Swagger (fallback):', err);
 		const emptySpec = { openapi: '3.0.0', info: { title: 'API Documentation', version: '1.0.0' }, paths: {} };
 		app.use('/docs', swaggerUi.serve, swaggerUi.setup(emptySpec));
 	}
@@ -118,3 +126,4 @@ app.get('/', (req, res) => success(res, { ok: true, env: process.env.NODE_ENV ||
 app.use(errorHandler);
 
 export default app;
+

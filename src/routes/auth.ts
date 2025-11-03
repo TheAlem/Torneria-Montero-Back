@@ -41,6 +41,12 @@ const router = Router();
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/UnifiedSuccess'
+ *       '422':
+ *         description: Error de validación de campos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/FieldsValidation'
  */
 router.post('/register', register);
 
@@ -114,6 +120,12 @@ router.post('/login', login);
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/UnifiedSuccess'
+ *       '422':
+ *         description: Error de validación de campos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/FieldsValidation'
  */
 router.post('/admin/users', authenticate, requireRole('admin'), adminCreate);
 

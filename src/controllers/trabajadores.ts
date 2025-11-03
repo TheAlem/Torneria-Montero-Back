@@ -32,8 +32,22 @@ export const eliminar = async (req: Request, res: Response, next: NextFunction) 
   try {
     const id = Number(req.params.id);
     await prisma.trabajadores.delete({ where: { id } });
-    return success(res, null, 204);
-  } catch (err) { next(err); }
+    // Respuesta consistente con cuerpo JSON
+    return success(res, null, 200, 'Trabajador eliminado');
+  } catch (err: any) {
+    if (err?.code === 'P2025') {
+      return fail(res, 'NOT_FOUND', 'Trabajador no encontrado', 404);
+    }
+    if (err?.code === 'P2003') {
+      return fail(
+        res,
+        'CONFLICT',
+        'No se puede eliminar el trabajador porque tiene registros asociados (asignaciones, tiempos o aparece como responsable). Desactívelo o quite las referencias antes de eliminar.',
+        409
+      );
+    }
+    next(err);
+  }
 };
 
 export const listarActivos = async (req: Request, res: Response, next: NextFunction) => {
