@@ -2,6 +2,7 @@ import { prisma } from '../prisma/client';
 import NotificationService from './notificationService';
 import { predictTiempoSec } from './MLService';
 import { logger } from '../utils/logger';
+import RealtimeService from '../realtime/RealtimeService';
 
 export async function evaluateAndNotify() {
   const now = new Date();
@@ -38,6 +39,15 @@ export async function evaluateAndNotify() {
         });
       } catch {}
 
+      // Emitir en tiempo real (mejor esfuerzo)
+      try {
+        const notif = await prisma.notificaciones.findFirst({ where: { pedido_id: p.id, cliente_id: p.cliente_id }, orderBy: { id: 'desc' } });
+        if (notif) {
+          RealtimeService.emitToClient(p.cliente_id, 'notification:new', notif);
+          RealtimeService.emitToOperators('kanban:semaforo-changed', { pedidoId: p.id, semaforo: 'ROJO', suggestedDue: nuevaFecha.toISOString() });
+        }
+      } catch {}
+
       await NotificationService.sendDelayNotice({
         clienteEmail: p.cliente?.email ?? null,
         clienteTelefono: p.cliente?.telefono ?? null,
@@ -57,4 +67,3 @@ export async function evaluateAndNotify() {
   }
   return { checked: activos.length, affected };
 }
-

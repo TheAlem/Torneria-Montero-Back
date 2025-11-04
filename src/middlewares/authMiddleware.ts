@@ -8,10 +8,18 @@ const JWT_SECRET = process.env.JWT_SECRET ?? '';
 
 export async function authenticate(req: Request, res: Response, next: NextFunction) {
   const auth = req.headers.authorization;
-  if (!auth) return fail(res, 'AUTH_ERROR', 'Token no provisto', 401);
-  const parts = auth.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') return fail(res, 'AUTH_ERROR', 'Token malformado', 401);
-  const token = parts[1];
+  // Permitir token por query para SSE/EventSource (no soporta headers personalizados)
+  const tokenFromQuery = (req.query?.token || req.query?.access_token) as string | undefined;
+  let token: string | undefined;
+  if (auth) {
+    const parts = auth.split(' ');
+    if (parts.length !== 2 || parts[0] !== 'Bearer') return fail(res, 'AUTH_ERROR', 'Token malformado', 401);
+    token = parts[1];
+  } else if (typeof tokenFromQuery === 'string' && tokenFromQuery.length > 0) {
+    token = tokenFromQuery;
+  } else {
+    return fail(res, 'AUTH_ERROR', 'Token no provisto', 401);
+  }
   try {
     if (!JWT_SECRET) {
       logger.error('Configuración del servidor inválida: falta JWT_SECRET');

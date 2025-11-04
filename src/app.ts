@@ -15,6 +15,7 @@ import authRoutes from './routes/auth';
 import kanbanRoutes from './routes/kanban';
 import mlRoutes from './routes/ml';
 import onboardingRoutes from './routes/onboarding';
+import realtimeRoutes from './routes/realtime';
 import { success } from './utils/response';
 
 const app = express();
@@ -32,6 +33,7 @@ app.use('/reportes', reportesRoutes);
 app.use('/kanban', kanbanRoutes);
 app.use('/ml', mlRoutes);
 app.use('/api', onboardingRoutes);
+app.use('/realtime', realtimeRoutes);
 
 // Swagger UI (generated at runtime with swagger-jsdoc)
 const swaggerOptions = {
@@ -126,4 +128,3 @@ app.get('/', (req, res) => success(res, { ok: true, env: process.env.NODE_ENV ||
 app.use(errorHandler);
 
 export default app;
-
