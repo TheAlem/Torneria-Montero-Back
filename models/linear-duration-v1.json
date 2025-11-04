@@ -1,0 +1,23 @@
+{
+  "version": "v1.0",
+  "trainedAt": "2025-11-04T06:38:05.850Z",
+  "algo": "linear-regression-v1",
+  "coef": [
+    14400,
+    0,
+    0,
+    0
+  ],
+  "meta": {
+    "names": [
+      "bias",
+      "prio_ALTA",
+      "prio_MEDIA",
+      "precio"
+    ],
+    "precioScale": {
+      "mean": 500,
+      "std": 1
+    }
+  }
+}

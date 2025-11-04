@@ -1,4 +1,4 @@
-import type { Request, Response, NextFunction } from 'express';
+﻿import type { Request, Response, NextFunction } from 'express';
 import { prisma } from '../prisma/client';
 import * as PedidoService from '../services/PedidoService';
 import { success, fail, fieldsValidation } from '../utils/response';
@@ -9,7 +9,7 @@ export const listar = async (req: Request, res: Response, next: NextFunction) =>
   try {
     const { page = 1, limit = 10 } = req.query as any;
     const pedidos = await prisma.pedidos.findMany({
-      include: { cliente: true, responsable: true },
+      include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } } },
       orderBy: { fecha_actualizacion: 'desc' },
       skip: (Number(page) - 1) * Number(limit),
       take: Number(limit),
@@ -22,7 +22,7 @@ export const listar = async (req: Request, res: Response, next: NextFunction) =>
 export const getById = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = Number(req.params.id);
-    const pedido = await prisma.pedidos.findUnique({ where: { id }, include: { cliente: true, responsable: true, asignaciones: true, tiempos: true } });
+    const pedido = await prisma.pedidos.findUnique({ where: { id }, include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } }, asignaciones: true, tiempos: true } });
     if (!pedido) return fail(res, 'NOT_FOUND', 'Pedido no encontrado', 404);
     return success(res, pedido);
   } catch (err) { next(err); }
@@ -30,7 +30,8 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
 
 export const crear = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const pedido = await PedidoService.createPedido(req.body);
+    const created = await PedidoService.createPedido(req.body);
+    const pedido = await prisma.pedidos.findUnique({ where: { id: created.id }, include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } } } });
     return success(res, pedido, 201);
   } catch (err: any) {
     if (err?.name === 'ZodError') return fieldsValidation(res, err.errors ?? err);
@@ -57,7 +58,8 @@ export const actualizar = async (req: Request, res: Response, next: NextFunction
 
     if (Object.keys(data).length === 0) return fail(res, 'VALIDATION_ERROR', 'No hay campos para actualizar', 400);
 
-    const pedido = await prisma.pedidos.update({ where: { id }, data });
+    await prisma.pedidos.update({ where: { id }, data });
+    const pedido = await prisma.pedidos.findUnique({ where: { id }, include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } } } });
     return success(res, pedido, 200, 'Pedido actualizado');
   } catch (err) { next(err); }
 };
@@ -83,4 +85,3 @@ export const cambiarEstado = async (req: Request, res: Response, next: NextFunct
     return success(res, { ok: true, pedido }, 200, 'Estado actualizado');
   } catch (err) { next(err); }
 };
-
