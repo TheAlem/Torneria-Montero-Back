@@ -60,6 +60,10 @@ export async function transitionEstado(pedidoId: number, newEstado: Estado, opts
       if (entregaNotif) {
         RealtimeService.emitToClient(pedido.cliente_id, 'notification:new', entregaNotif);
       }
+      // Alerta web para operadores
+      try {
+        RealtimeService.emitWebAlert('ENTREGA_COMPLETADA', `Pedido #${pedidoId} entregado`, { pedidoId });
+      } catch {}
     } catch (_) { /* ignore */ }
   } else {
     // Evaluar semáforo para este pedido (riesgo de retraso)
@@ -75,6 +79,7 @@ export async function transitionEstado(pedidoId: number, newEstado: Estado, opts
           }).catch(() => null);
           if (alertaNotif) {
             RealtimeService.emitToClient(pedido.cliente_id, 'notification:new', alertaNotif);
+            RealtimeService.emitWebAlert('RETRASO', `Pedido #${pedidoId} en riesgo (ROJO)`, { pedidoId, reason: 'Riesgo de retraso detectado' });
           }
           await NotificationService.sendDelayNotice({
             clienteEmail: null,
@@ -120,4 +125,3 @@ export async function transitionEstado(pedidoId: number, newEstado: Estado, opts
 }
 
 export default { transitionEstado };
-

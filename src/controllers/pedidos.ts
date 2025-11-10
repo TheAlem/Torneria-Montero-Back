@@ -4,6 +4,7 @@ import * as PedidoService from '../services/PedidoService';
 import { success, fail, fieldsValidation } from '../utils/response';
 import { UpdatePedidoSchema } from '../validators/pedidoValidator';
 import { transitionEstado } from '../services/PedidoWorkflow';
+import RealtimeService from '../realtime/RealtimeService';
 
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -32,6 +33,14 @@ export const crear = async (req: Request, res: Response, next: NextFunction) => 
   try {
     const created = await PedidoService.createPedido(req.body);
     const pedido = await prisma.pedidos.findUnique({ where: { id: created.id }, include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } } } });
+    // Alerta para operadores: nuevo trabajo agregado
+    try {
+      RealtimeService.emitWebAlert(
+        'TRABAJO_AGREGADO',
+        `Nuevo pedido #${created.id} creado`,
+        { pedidoId: created.id, prioridad: pedido?.prioridad, cliente: pedido?.cliente?.nombre }
+      );
+    } catch {}
     return success(res, pedido, 201);
   } catch (err: any) {
     if (err?.name === 'ZodError') return fieldsValidation(res, err.errors ?? err);

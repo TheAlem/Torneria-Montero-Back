@@ -1,4 +1,5 @@
 import { prisma } from '../prisma/client';
+import { predictTiempoSec } from './MLService';
 
 type RankedTrabajador = { id: number; score: number };
 
@@ -45,3 +46,45 @@ export async function suggestTopTrabajador(pedidoId: number): Promise<RankedTrab
   return ranked[0] ?? null;
 }
 
+export async function candidatesDetailsForPedido(pedidoId: number, limit = 5) {
+  const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId } });
+  if (!pedido) return [];
+
+  const ranked = await rankTrabajadoresForPedido(pedidoId, limit * 2); // rank más amplio, luego cortamos
+  const ids = ranked.map(r => r.id);
+  const workers = await prisma.trabajadores.findMany({
+    where: { id: { in: ids }, estado: 'Activo' },
+    include: { usuario: { select: { id: true, nombre: true, email: true } } }
+  });
+
+  // desvío promedio por trabajador (mayor precisión)
+  const desvios = await prisma.predicciones_tiempo.groupBy({ by: ['trabajador_id'], _avg: { desvio: true }, where: { trabajador_id: { in: ids } } });
+  const desvioMap = new Map<number, number>();
+  desvios.forEach(d => desvioMap.set(d.trabajador_id, d._avg.desvio ?? 0.3));
+
+  const WIP_MAX = Math.max(1, Number(process.env.WIP_MAX || 3));
+  const enriched = [] as any[];
+  for (const r of ranked) {
+    const w = workers.find(w => w.id === r.id);
+    if (!w) continue;
+    const estimated = await predictTiempoSec(pedidoId, w.id).catch(() => null);
+    const avgDesvio = desvioMap.get(w.id) ?? null;
+    const sobrecargado = (w.carga_actual || 0) >= WIP_MAX;
+    enriched.push({
+      trabajadorId: w.id,
+      nombre: w.usuario?.nombre || null,
+      email: w.usuario?.email || null,
+      rol_tecnico: w.rol_tecnico || null,
+      skills: w.skills || null,
+      disponibilidad: w.disponibilidad || null,
+      carga_actual: w.carga_actual || 0,
+      wipMax: WIP_MAX,
+      sobrecargado,
+      score: r.score,
+      tiempo_estimado_sec: estimated,
+      desvio_promedio: typeof avgDesvio === 'number' ? Number(avgDesvio.toFixed(3)) : null,
+    });
+    if (enriched.length >= limit) break;
+  }
+  return enriched;
+}

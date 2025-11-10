@@ -59,15 +59,14 @@ export const listarKanban = async (req: Request, res: Response, next: NextFuncti
       return map[s] ?? s;
     };
 
-    const [pending, assigned, inProgress, qa, delivered] = await Promise.all([
+    const [pending, inProgress, qa, delivered] = await Promise.all([
       prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('PENDIENTE') }, select: kanbanCardSelect, orderBy: [{ prioridad: 'desc' }, { fecha_actualizacion: 'desc' }], take: parsedLimit }),
-      prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('ASIGNADO') }, select: kanbanCardSelect, orderBy: [{ prioridad: 'desc' }, { fecha_actualizacion: 'desc' }], take: parsedLimit }),
       prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('EN_PROGRESO') }, select: kanbanCardSelect, orderBy: [{ prioridad: 'desc' }, { fecha_actualizacion: 'desc' }], take: parsedLimit }),
       prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('QA') }, select: kanbanCardSelect, orderBy: { fecha_actualizacion: 'desc' }, take: parsedLimit }),
       prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('ENTREGADO') }, select: kanbanCardSelect, orderBy: { fecha_actualizacion: 'desc' }, take: parsedLimit }),
     ]);
 
-  return success(res, { columns: { PENDIENTE: pending, ASIGNADO: assigned, EN_PROGRESO: inProgress, QA: qa, ENTREGADO: delivered } });
+  return success(res, { columns: { PENDIENTE: pending, EN_PROGRESO: inProgress, QA: qa, ENTREGADO: delivered } });
   } catch (err) {
     next(err);
   }

@@ -45,6 +45,7 @@ export async function evaluateAndNotify() {
         if (notif) {
           RealtimeService.emitToClient(p.cliente_id, 'notification:new', notif);
           RealtimeService.emitToOperators('kanban:semaforo-changed', { pedidoId: p.id, semaforo: 'ROJO', suggestedDue: nuevaFecha.toISOString() });
+          RealtimeService.emitWebAlert('RETRASO', `Pedido #${p.id} en riesgo (ROJO)`, { pedidoId: p.id, suggestedDue: nuevaFecha.toISOString() });
         }
       } catch {}
 
@@ -62,6 +63,30 @@ export async function evaluateAndNotify() {
       // si está en verde y ok, asegurar semáforo en VERDE (no forzamos amarillos aquí)
       if (p.semaforo !== 'VERDE') {
         await prisma.pedidos.update({ where: { id: p.id }, data: { semaforo: 'VERDE' } });
+      }
+
+      // Próximas entregas (ventana de <= 2 días)
+      if (p.fecha_estimada_fin) {
+        const hours = Math.ceil(remainingSec / 3600);
+        if (remainingSec > 0 && remainingSec <= 48 * 3600) {
+          // Registrar notificación al cliente (opcional) y emitir para web
+          try {
+            const msg = hours <= 24 ? `Entrega en ${hours} horas` : `Entrega en ${Math.ceil(hours/24)} días`;
+            // Evitar spam: solo una notificación UPCOMING cada 6h por pedido
+            const sixHoursAgo = new Date(now.getTime() - 6 * 3600 * 1000);
+            const lastUpcoming = await prisma.notificaciones.findFirst({
+              where: { pedido_id: p.id, tipo: 'INFO', mensaje: { contains: 'Entrega en' }, fecha_creacion: { gte: sixHoursAgo } },
+              orderBy: { id: 'desc' }
+            });
+            const upcoming = lastUpcoming ?? await prisma.notificaciones.create({
+              data: { pedido_id: p.id, cliente_id: p.cliente_id, mensaje: msg, tipo: 'INFO' }
+            }).catch(() => null);
+            if (upcoming) {
+              RealtimeService.emitToClient(p.cliente_id, 'notification:new', upcoming);
+            }
+            RealtimeService.emitWebAlert('PROXIMA_ENTREGA', `Pedido #${p.id} - ${msg}`, { pedidoId: p.id, inHours: hours });
+          } catch {}
+        }
       }
     }
   }

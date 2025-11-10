@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 import { logger } from '../utils/logger';
+import { prisma } from '../prisma/client';
 
 type Stream = Response;
 
@@ -76,8 +77,26 @@ class Realtime {
   emitToOperators(event: string, payload: any) {
     for (const s of this.operatorStreams) writeEvent(s, event, payload);
   }
+
+  // Helper para alertas visibles en la web (operadores/admin)
+  emitWebAlert(type: string, message: string, data?: any) {
+    const payload = { type, message, data: data ?? null, ts: new Date().toISOString() };
+    this.emitToOperators('alert:web', payload);
+    // Persistir en tabla alertas para reportes/historial (best effort)
+    try {
+      const severityMap: Record<string, 'VERDE'|'AMARILLO'|'ROJO'> = {
+        'RETRASO': 'ROJO',
+        'PROXIMA_ENTREGA': 'AMARILLO',
+        'ENTREGA_COMPLETADA': 'VERDE',
+        'ASIGNACION': 'VERDE',
+        'TRABAJO_AGREGADO': 'VERDE',
+      };
+      const severidad = severityMap[type] || 'VERDE';
+      const pedidoId = data?.pedidoId ? Number(data.pedidoId) : null;
+      prisma.alertas.create({ data: { tipo: type, severidad, descripcion: message, pedido_id: pedidoId ?? undefined } }).catch(() => {});
+    } catch {}
+  }
 }
 
 export const RealtimeService = new Realtime();
 export default RealtimeService;
-

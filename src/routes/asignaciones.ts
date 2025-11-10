@@ -53,4 +53,31 @@ router.post('/', authenticate, requireRole('admin','tornero'), ctrl.asignar);
  */
 router.get('/', authenticate, ctrl.listar);
 
+/**
+ * @openapi
+ * /api/asignar/sugerencias:
+ *   get:
+ *     tags:
+ *       - Asignaciones
+ *     summary: Obtener sugerencias de trabajadores para un pedido con info detallada
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: pedidoId
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, example: 5 }
+ *     responses:
+ *       '200':
+ *         description: Sugerencias de asignación
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnifiedSuccess'
+ */
+router.get('/sugerencias', authenticate, ctrl.sugerencias);
+
 export default router;

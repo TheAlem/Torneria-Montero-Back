@@ -1,9 +1,10 @@
 ﻿import type { Request, Response, NextFunction } from 'express';
 import { prisma } from '../prisma/client';
 import { success, fail } from '../utils/response';
-import { suggestTopTrabajador } from '../services/HeuristicsService';
+import { suggestTopTrabajador, candidatesDetailsForPedido } from '../services/HeuristicsService';
 import { predictTiempoSec, storePrediccion } from '../services/MLService';
 import { logger } from '../utils/logger';
+import RealtimeService from '../realtime/RealtimeService';
 
 // Asignación simple: actualizar Pedido con responsable
 export const asignar = async (req: Request, res: Response, next: NextFunction) => {
@@ -36,8 +37,9 @@ export const asignar = async (req: Request, res: Response, next: NextFunction) =
     comentarios: comentarios ?? null,
   } });
   // Update pedido responsable (usar el trabajador resuelto, no solo el input)
-  const current = await prisma.pedidos.findUnique({ where: { id: Number(pedido_id) }, select: { fecha_estimada_fin: true } });
-  const dataUpdate: any = { responsable_id: Number(trabajador), estado: 'ASIGNADO', tiempo_estimado_sec: tEstimado ?? null };
+  const current = await prisma.pedidos.findUnique({ where: { id: Number(pedido_id) }, select: { fecha_estimada_fin: true, estado: true } });
+  // No cambiamos el estado a ASIGNADO; se mantiene en PENDIENTE hasta que manualmente pase a EN_PROGRESO desde el Kanban
+  const dataUpdate: any = { responsable_id: Number(trabajador), tiempo_estimado_sec: tEstimado ?? null };
   if (!current?.fecha_estimada_fin && typeof tEstimado === 'number') {
     dataUpdate.fecha_estimada_fin = new Date(Date.now() + tEstimado * 1000);
   }
@@ -46,6 +48,14 @@ export const asignar = async (req: Request, res: Response, next: NextFunction) =
   if (tEstimado) await storePrediccion(Number(pedido_id), trabajador, tEstimado);
   logger.info({ msg: 'Asignaci�n creada', asign });
   const pedidoAct = await prisma.pedidos.findUnique({ where: { id: Number(pedido_id) }, include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } } } });
+  // Alerta para operadores: pedido asignado
+  try {
+    RealtimeService.emitWebAlert(
+      'ASIGNACION',
+      `Pedido #${Number(pedido_id)} asignado`,
+      { pedidoId: Number(pedido_id), trabajadorId: Number(trabajador), responsable: pedidoAct?.responsable?.usuario?.nombre || null }
+    );
+  } catch {}
   return success(res, { asignacion: asign, pedido: pedidoAct }, 201, 'Pedido asignado');
   } catch (err) { next(err); }
 };
@@ -57,3 +67,13 @@ export const listar = async (req: Request, res: Response, next: NextFunction) =>
   } catch (err) { next(err); }
 };
 
+// Sugerencias de asignación con información enriquecida
+export const sugerencias = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const pedidoId = Number((req.query?.pedidoId || req.query?.pedido_id));
+    const limit = Math.min(Math.max(Number(req.query?.limit || 5), 1), 20);
+    if (!pedidoId) return fail(res, 'VALIDATION_ERROR', 'pedidoId requerido', 400);
+    const items = await candidatesDetailsForPedido(pedidoId, limit);
+    return success(res, { pedidoId, items });
+  } catch (err) { next(err); }
+};

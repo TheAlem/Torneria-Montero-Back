@@ -19,4 +19,35 @@ app.listen(PORT, () => {
       logger.info(`Kanban monitor enabled. Interval=${everySec}s`);
     });
   }
+
+  // Nightly ML training (auto aprendizaje por trabajador/tiempos)
+  const mlEnabled = String(process.env.ML_TRAIN_ENABLED || 'false').toLowerCase() === 'true';
+  if (mlEnabled) {
+    const hourUTC = Math.min(23, Math.max(0, Number(process.env.ML_TRAIN_UTC_HOUR || 6)));
+    const limit = Math.max(100, Number(process.env.ML_TRAIN_LIMIT || 2000));
+    const scheduleNext = () => {
+      const now = new Date();
+      const next = new Date(now);
+      next.setUTCDate(now.getUTCDate() + (now.getUTCHours() >= hourUTC ? 1 : 0));
+      next.setUTCHours(hourUTC, 0, 0, 0);
+      const ms = Math.max(1000, next.getTime() - now.getTime());
+      setTimeout(async () => {
+        try {
+          const { trainLinearDurationModel } = await import('./services/ml/trainer');
+          const result = await trainLinearDurationModel(limit);
+          logger.info({ msg: '[ML] Modelo entrenado', count: result.count, version: result.model.version });
+          try {
+            const { default: RealtimeService } = await import('./realtime/RealtimeService');
+            RealtimeService.emitWebAlert('ML_TRAINED', `Modelo ML entrenado (${result.count} muestras)`, { version: result.model.version });
+          } catch {}
+        } catch (e) {
+          logger.error('[ML] Error en entrenamiento nocturno', e as any);
+        } finally {
+          scheduleNext();
+        }
+      }, ms);
+      logger.info(`[ML] Entrenamiento programado diariamente a las ${hourUTC}:00 UTC (en ${(ms/3600000).toFixed(2)} h)`);
+    };
+    scheduleNext();
+  }
 });
