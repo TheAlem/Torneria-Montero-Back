@@ -31,8 +31,40 @@ const swaggerOptions = {
                         errors: { type: ['object', 'array'], nullable: true }
                     }
                 },
+                FieldsValidation: {
+                    type: 'object',
+                    properties: {
+                        status: { type: 'string', example: 'fields-validation' },
+                        data: { type: 'object', additionalProperties: true },
+                        message: { type: 'string', example: '' }
+                    }
+                },
                 Client: { type: 'object', properties: { id: { type: 'integer' }, nombre: { type: 'string' }, telefono: { type: 'string' } } },
-                ClientListResponseWrapper: { $ref: '#/components/schemas/UnifiedSuccess' }
+                ClientListResponseWrapper: { $ref: '#/components/schemas/UnifiedSuccess' },
+                Candidate: {
+                    type: 'object',
+                    properties: {
+                        trabajadorId: { type: 'integer' },
+                        nombre: { type: ['string','null'] },
+                        skills: { type: 'array', items: { type: 'string' } },
+                        wipActual: { type: 'integer' },
+                        wipMax: { type: 'integer' },
+                        capacidadLibreMin: { type: 'integer' },
+                        desvioHistorico: { type: 'number', format: 'float' },
+                        etaSiToma: { type: ['string','null'], format: 'date-time' },
+                        saturado: { type: 'boolean' },
+                        score: { type: 'number', format: 'float' }
+                    }
+                },
+                AutoAssignResponse: {
+                    type: 'object',
+                    properties: {
+                        autoAssigned: { type: 'boolean' },
+                        pedidoId: { type: 'integer' },
+                        trabajadorId: { type: ['integer','null'] },
+                        semaforo: { type: ['string','null'], enum: ['VERDE','AMARILLO','ROJO', null] }
+                    }
+                }
             }
         }
     },

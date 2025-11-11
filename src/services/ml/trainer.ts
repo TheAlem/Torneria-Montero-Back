@@ -84,6 +84,14 @@ export async function trainLinearDurationModel(limit = 1000) {
   // Normal equation: beta = (X^T X)^-1 X^T y
   const Xt = transpose(X);
   const XtX = matmul(Xt, X);
+  // Ridge regularization (λI) except do not penalize bias term
+  const lambda = Number(process.env.ML_RIDGE_LAMBDA || 0);
+  if (lambda && isFinite(lambda) && lambda > 0) {
+    for (let i = 0; i < XtX.length; i++) {
+      if (i === 0) continue; // do not regularize bias
+      XtX[i][i] += lambda;
+    }
+  }
   const XtXInv = invertMatrix(XtX);
   if (!XtXInv) {
     const model = {

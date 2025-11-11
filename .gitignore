@@ -3,3 +3,8 @@ node_modules
 .env
 
 /generated/prisma
+
+# virtual envs and ML artifacts
+.venv312/
+models/*.onnx
+models/meta.json

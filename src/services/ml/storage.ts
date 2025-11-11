@@ -60,3 +60,21 @@ export async function loadLatestModelFromDB(): Promise<LinearModel | null> {
     return rec.parametros as any as LinearModel;
   } catch (_) { return null; }
 }
+
+// Helpers for ONNX provider (optional)
+export function getModelPath() {
+  return process.env.MODEL_PATH || path.join(modelsDir(), 'model-eta-v1.onnx');
+}
+
+export function getMinSeconds() {
+  const v = Number(process.env.ML_MIN_SECONDS ?? 900);
+  return Number.isFinite(v) ? v : 900;
+}
+
+export function loadMetaFromFile(): any | null {
+  try {
+    const p = path.join(modelsDir(), 'meta.json');
+    if (!fs.existsSync(p)) return null;
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch { return null; }
+}

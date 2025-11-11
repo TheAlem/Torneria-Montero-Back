@@ -4,6 +4,7 @@ import { success, fail } from '../utils/response';
 import { logger } from '../utils/logger';
 import { evaluateAndNotify } from '../services/KanbanMonitorService';
 import { transitionEstado } from '../services/PedidoWorkflow';
+import { computeSemaforoForPedido } from '../services/SemaforoService';
 // enum types from Prisma removed to avoid direct dependency on generated client
 
 // Common select for kanban cards to ensure consistency
@@ -81,8 +82,11 @@ export const cambiarEstado = async (req: Request, res: Response, next: NextFunct
     const { newStatus, note, userId } = req.body;
 
   const pedido = await transitionEstado(Number(id), newStatus, { note, userId });
+  // Métricas de semáforo para tooltip inmediato en la UI
+  let semaforoMetrics: any = null;
+  try { semaforoMetrics = await computeSemaforoForPedido(Number(id)); } catch {}
   logger.info({ msg: '[Kanban] Estado cambiado', id, newStatus, userId });
-  return success(res, { ok: true, pedido });
+  return success(res, { ok: true, pedido, semaforo: semaforoMetrics?.color ?? pedido?.semaforo ?? null, metrics: semaforoMetrics });
   } catch (err) {
     next(err);
   }

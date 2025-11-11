@@ -3,6 +3,8 @@ import NotificationService from './notificationService';
 import { predictTiempoSec } from './MLService';
 import { logger } from '../utils/logger';
 import RealtimeService from '../realtime/RealtimeService';
+import { applyAndEmitSemaforo } from './SemaforoService';
+import { suggestCandidates, maybeReassignIfEnabled } from './AssignmentService';
 
 export async function evaluateAndNotify() {
   const now = new Date();
@@ -12,6 +14,25 @@ export async function evaluateAndNotify() {
   });
   const affected: any[] = [];
   for (const p of activos) {
+    // Nueva lógica de semáforo real (ratio por trabajador y fecha/hora):
+    try {
+      const res = await applyAndEmitSemaforo(p.id);
+      if (res && (res as any).changed) {
+        affected.push({ id: p.id, semaforo: (res as any).color, ratio: (res as any).ratio });
+      }
+      // Sugerencias / reasignación en riesgo
+      const color = (res as any)?.color;
+      if (color === 'ROJO') {
+        await maybeReassignIfEnabled(p.id, color);
+      } else if (color === 'AMARILLO') {
+        try {
+          const candidates = await suggestCandidates(p.id);
+          RealtimeService.emitToOperators('assignment:suggest', { pedidoId: p.id, candidates, ts: Date.now() });
+        } catch {}
+      }
+      // Evitar duplicados con la lógica legacy
+      continue;
+    } catch {}
     if (!p.fecha_estimada_fin) continue;
     const remainingMs = p.fecha_estimada_fin.getTime() - now.getTime();
     const remainingSec = Math.max(0, Math.round(remainingMs / 1000));

@@ -1,6 +1,6 @@
 {
   "version": "v1.0",
-  "trainedAt": "2025-11-08T02:53:21.566Z",
+  "trainedAt": "2025-11-10T19:03:17.719Z",
   "algo": "linear-regression-v1",
   "coef": [
     14400,
@@ -16,8 +16,8 @@
       "precio"
     ],
     "precioScale": {
-      "mean": 500,
-      "std": 1
+      "mean": 2250,
+      "std": 1750
     }
   }
 }

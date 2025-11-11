@@ -3,6 +3,8 @@ import NotificationService from './notificationService';
 import { predictTiempoSec } from './MLService';
 import { logger } from '../utils/logger';
 import RealtimeService from '../realtime/RealtimeService';
+import { applyAndEmitSemaforo } from './SemaforoService';
+import { autoAssignIfEnabled, maybeReassignIfEnabled } from './AssignmentService';
 
 type Estado = 'PENDIENTE'|'ASIGNADO'|'EN_PROGRESO'|'QA'|'ENTREGADO';
 
@@ -102,6 +104,18 @@ export async function transitionEstado(pedidoId: number, newEstado: Estado, opts
     if (pedido.responsable_id) {
       const wip = await prisma.pedidos.count({ where: { responsable_id: pedido.responsable_id, estado: 'EN_PROGRESO' } });
       await prisma.trabajadores.update({ where: { id: pedido.responsable_id }, data: { carga_actual: wip } });
+    }
+  } catch (_) { /* ignore */ }
+
+  // Reaplicar semáforo con cálculo real y emitir cambios (coherencia inmediata tras transición)
+  try {
+    const res = await applyAndEmitSemaforo(pedidoId);
+    if (newEstado === 'EN_PROGRESO' && !pedido.responsable_id) {
+      try { await autoAssignIfEnabled(pedidoId); } catch {}
+    }
+    const color = (res as any)?.color;
+    if (color === 'ROJO') {
+      try { await maybeReassignIfEnabled(pedidoId, 'ROJO'); } catch {}
     }
   } catch (_) { /* ignore */ }
 

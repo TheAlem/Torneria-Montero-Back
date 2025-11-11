@@ -71,6 +71,23 @@
           }
         }
       },
+      "FieldsValidation": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "fields-validation"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "message": {
+            "type": "string",
+            "example": ""
+          }
+        }
+      },
       "Client": {
         "type": "object",
         "properties": {
@@ -87,6 +104,82 @@
       },
       "ClientListResponseWrapper": {
         "$ref": "#/components/schemas/UnifiedSuccess"
+      },
+      "Candidate": {
+        "type": "object",
+        "properties": {
+          "trabajadorId": {
+            "type": "integer"
+          },
+          "nombre": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "wipActual": {
+            "type": "integer"
+          },
+          "wipMax": {
+            "type": "integer"
+          },
+          "capacidadLibreMin": {
+            "type": "integer"
+          },
+          "desvioHistorico": {
+            "type": "number",
+            "format": "float"
+          },
+          "etaSiToma": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "saturado": {
+            "type": "boolean"
+          },
+          "score": {
+            "type": "number",
+            "format": "float"
+          }
+        }
+      },
+      "AutoAssignResponse": {
+        "type": "object",
+        "properties": {
+          "autoAssigned": {
+            "type": "boolean"
+          },
+          "pedidoId": {
+            "type": "integer"
+          },
+          "trabajadorId": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "semaforo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "VERDE",
+              "AMARILLO",
+              "ROJO",
+              null
+            ]
+          }
+        }
       }
     }
   },
@@ -153,6 +246,130 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/asignar/suggest": {
+      "get": {
+        "tags": [
+          "Asignaciones"
+        ],
+        "summary": "Sugerencias de asignación (candidatos ordenados)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "pedidoId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Candidatos sugeridos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "example": null
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "candidates": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Candidate"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/asignar/auto": {
+      "post": {
+        "tags": [
+          "Asignaciones"
+        ],
+        "summary": "Auto-asignar pedido al mejor candidato disponible",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "pedidoId": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Auto-asignación realizada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "success"
+                    },
+                    "message": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "example": null
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AutoAssignResponse"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pedido no encontrado"
+          },
+          "409": {
+            "description": "No se pudo auto-asignar (candidatos saturados)"
+          },
+          "422": {
+            "description": "Validación fallida"
           }
         }
       }
