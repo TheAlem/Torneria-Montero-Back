@@ -1,4 +1,4 @@
-import { prisma } from '../prisma/client';
+﻿import { prisma } from '../prisma/client';
 import { predictTiempoSec } from './MLService';
 
 type RankedTrabajador = { id: number; score: number };

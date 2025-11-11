@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import * as ctrl from '../controllers/asignaciones';
 import { authenticate, requireRole } from '../middlewares/authMiddleware';
-import { suggestCandidates, autoAssignIfEnabled, autoAssignForced } from '../services/AssignmentService';
+import { suggestCandidates, autoAssignForced } from '../services/AssignmentService';
 import { prisma } from '../prisma/client';
 import { success as ok, fail } from '../utils/response';
 
@@ -55,34 +55,6 @@ router.post('/', authenticate, requireRole('admin','tornero'), ctrl.asignar);
  *               $ref: '#/components/schemas/UnifiedSuccess'
  */
 router.get('/', authenticate, ctrl.listar);
-
-/**
- * @openapi
- * /api/asignar/sugerencias:
- *   get:
- *     tags:
- *       - Asignaciones
- *     summary: Obtener sugerencias de trabajadores para un pedido (DEPRECATED: usar /api/asignar/suggest)
- *     deprecated: true
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: query
- *         name: pedidoId
- *         required: true
- *         schema: { type: integer }
- *       - in: query
- *         name: limit
- *         schema: { type: integer, example: 5 }
- *     responses:
- *       '200':
- *         description: Sugerencias de asignación
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/UnifiedSuccess'
- */
-router.get('/sugerencias', authenticate, ctrl.sugerencias);
 
 /**
  * @openapi

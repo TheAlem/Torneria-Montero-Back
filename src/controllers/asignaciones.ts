@@ -1,7 +1,7 @@
 ﻿import type { Request, Response, NextFunction } from 'express';
 import { prisma } from '../prisma/client';
 import { success, fail } from '../utils/response';
-import { suggestTopTrabajador, candidatesDetailsForPedido } from '../services/HeuristicsService';
+import { suggestTopTrabajador } from '../services/HeuristicsService';
 import { predictTiempoSec, storePrediccion } from '../services/MLService';
 import { logger } from '../utils/logger';
 import RealtimeService from '../realtime/RealtimeService';
@@ -64,16 +64,5 @@ export const listar = async (req: Request, res: Response, next: NextFunction) =>
   try {
   const asigns = await prisma.asignaciones.findMany({ include: { pedido: true, trabajador: true }, orderBy: { fecha_asignacion: 'desc' } });
   return success(res, asigns);
-  } catch (err) { next(err); }
-};
-
-// Sugerencias de asignación con información enriquecida
-export const sugerencias = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const pedidoId = Number((req.query?.pedidoId || req.query?.pedido_id));
-    const limit = Math.min(Math.max(Number(req.query?.limit || 5), 1), 20);
-    if (!pedidoId) return fail(res, 'VALIDATION_ERROR', 'pedidoId requerido', 400);
-    const items = await candidatesDetailsForPedido(pedidoId, limit);
-    return success(res, { pedidoId, items });
   } catch (err) { next(err); }
 };

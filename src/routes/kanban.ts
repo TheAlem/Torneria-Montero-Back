@@ -66,6 +66,13 @@ router.patch('/:id/status', authenticate, cambiarEstado);
  *     summary: Evaluar semáforo y notificar retrasos (solo ADMIN)
  *     security:
  *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: autoReassign
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *         description: Si es true, intenta reasignación automática en pedidos en ROJO. Por defecto false (solo sugiere).
  *     responses:
  *       '200':
  *         description: Evaluación completada

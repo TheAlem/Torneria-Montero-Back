@@ -68,12 +68,12 @@ router.get('/status', ctrl.status);
  *         application/json:
  *           schema:
  *             type: object
- *             properties:
- *               provider:
- *                 type: string
- *                 enum: [linear, onnx]
- *                 description: Si se omite, usa ML_PROVIDER (por defecto 'linear').
- *               limit:
+  *             properties:
+  *               provider:
+  *                 type: string
+  *                 enum: [linear, onnx]
+  *                 description: Selección del proveedor de entrenamiento/predicción (por defecto 'linear').
+  *               limit:
  *                 type: integer
  *                 description: Límite de muestras de entrenamiento (por defecto ML_TRAIN_LIMIT)
  *     responses:
