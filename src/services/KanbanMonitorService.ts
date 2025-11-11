@@ -5,8 +5,7 @@ import { logger } from '../utils/logger';
 import RealtimeService from '../realtime/RealtimeService';
 import { applyAndEmitSemaforo } from './SemaforoService';
 import { suggestCandidates, maybeReassignIfEnabled } from './AssignmentService';
-
-export async function evaluateAndNotify() {
+export async function evaluateAndNotify(options?: { suggestOnly?: boolean }) {
   const now = new Date();
   const activos = await prisma.pedidos.findMany({
     where: { estado: { in: ['PENDIENTE','ASIGNADO','EN_PROGRESO','QA'] } },
@@ -23,7 +22,14 @@ export async function evaluateAndNotify() {
       // Sugerencias / reasignación en riesgo
       const color = (res as any)?.color;
       if (color === 'ROJO') {
-        await maybeReassignIfEnabled(p.id, color);
+        if (!options?.suggestOnly) {
+          await maybeReassignIfEnabled(p.id, color);
+        } else {
+          try {
+            const candidates = await suggestCandidates(p.id);
+            RealtimeService.emitToOperators('assignment:suggest', { pedidoId: p.id, candidates, ts: Date.now() });
+          } catch {}
+        }
       } else if (color === 'AMARILLO') {
         try {
           const candidates = await suggestCandidates(p.id);

@@ -21,7 +21,12 @@ import { success } from './utils/response';
 const app = express();
 
 const corsOrigins = (process.env.CORS_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
-app.use(cors({ origin: corsOrigins.length ? corsOrigins : true }));
+app.use(cors({
+  origin: corsOrigins.length ? corsOrigins : true,
+  credentials: true,
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization','x-api-key']
+}));
 app.use(express.json());
 
 app.use('/auth', authRoutes);

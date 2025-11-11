@@ -2,7 +2,6 @@ import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from sklearn.experimental import enable_hist_gradient_boosting  # noqa: F401
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error
 from skl2onnx import to_onnx

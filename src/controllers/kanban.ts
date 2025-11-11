@@ -97,7 +97,10 @@ export const cambiarEstado = async (req: Request, res: Response, next: NextFunct
  */
 export const evaluarSemaforo = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await evaluateAndNotify();
+    // Por defecto, la evaluación manual NO reasigna automáticamente.
+    // Permite forzar reasignación pasando ?autoReassign=true
+    const autoReassign = String((req.query?.autoReassign as string) || 'false').toLowerCase() === 'true';
+    const result = await evaluateAndNotify({ suggestOnly: !autoReassign });
     return success(res, { result }, 200, 'Evaluación de semáforo completada');
   } catch (err) { next(err); }
 };
