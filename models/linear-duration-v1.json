@@ -1,23 +1,29 @@
 {
   "version": "v1.0",
-  "trainedAt": "2025-11-10T19:03:17.719Z",
+  "trainedAt": "2025-11-11T00:25:00.152Z",
   "algo": "linear-regression-v1",
   "coef": [
-    14400,
-    0,
-    0,
-    0
+    125809.19564435205,
+    42429.86874108771,
+    -42429.868741087725,
+    90419.45452547676,
+    62941.94451418382,
+    59985.999618881164,
+    30433.454906595747
   ],
   "meta": {
     "names": [
       "bias",
       "prio_ALTA",
       "prio_MEDIA",
-      "precio"
+      "precio",
+      "precio2",
+      "prio_ALTA_x_precio",
+      "prio_MEDIA_x_precio"
     ],
     "precioScale": {
-      "mean": 2250,
-      "std": 1750
+      "mean": 1700,
+      "std": 1626.8579122549907
     }
   }
 }

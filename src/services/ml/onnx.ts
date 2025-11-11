@@ -25,5 +25,9 @@ export async function onnxPredict(features: number[], modelPath: string) {
   return y;
 }
 
-export default { onnxPredict, ensureOnnxLoaded };
+export async function reloadOnnxSession(modelPath: string) {
+  session = null;
+  return ensureOnnxLoaded(modelPath);
+}
 
+export default { onnxPredict, ensureOnnxLoaded, reloadOnnxSession };
