@@ -46,7 +46,7 @@ export const asignar = async (req: Request, res: Response, next: NextFunction) =
   await prisma.pedidos.update({ where: { id: Number(pedido_id) }, data: dataUpdate });
   // Persist predicted time for learning history
   if (tEstimado) await storePrediccion(Number(pedido_id), trabajador, tEstimado);
-  logger.info({ msg: 'Asignaci�n creada', asign });
+  logger.info({ msg: 'Asignación creada', asign });
   const pedidoAct = await prisma.pedidos.findUnique({ where: { id: Number(pedido_id) }, include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } } } });
   // Alerta para operadores: pedido asignado
   try {

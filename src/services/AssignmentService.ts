@@ -2,6 +2,7 @@ import { prisma } from '../prisma/client';
 import { predictTiempoSec } from './MLService';
 import { applyAndEmitSemaforo, computeSemaforoForPedido } from './SemaforoService';
 import RealtimeService from '../realtime/RealtimeService';
+import { parseDescripcion, normalizeSkills, skillOverlap } from './ml/features';
 
 type Candidate = {
   trabajadorId: number;
@@ -37,7 +38,7 @@ function prioridadBoost(pr: string) {
 }
 
 export async function suggestCandidates(pedidoId: number): Promise<Candidate[]> {
-  const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId }, select: { prioridad: true } });
+  const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId }, select: { prioridad: true, descripcion: true } });
   if (!pedido) return [];
 
   const trabajadores = await prisma.trabajadores.findMany({
@@ -57,12 +58,27 @@ export async function suggestCandidates(pedidoId: number): Promise<Candidate[]> 
   const wipMaxEnv = Math.max(1, Number(process.env.WIP_MAX || 5));
 
   const out: Candidate[] = [];
+  // Tags derivados de la descripción del pedido para evaluar match de skills
+  const _parsed = parseDescripcion(pedido.descripcion);
+  const tags = [
+    ...(_parsed.materiales.acero ? ['acero'] : []),
+    ...(_parsed.materiales.aluminio ? ['aluminio'] : []),
+    ...(_parsed.materiales.bronce ? ['bronce'] : []),
+    ...(_parsed.materiales.inox ? ['inox'] : []),
+    ...(_parsed.procesos.torneado ? ['torneado'] : []),
+    ...(_parsed.procesos.fresado ? ['fresado'] : []),
+    ...(_parsed.procesos.roscado ? ['roscado'] : []),
+    ...(_parsed.procesos.taladrado ? ['taladrado'] : []),
+    ...(_parsed.procesos.soldadura ? ['soldadura'] : []),
+    ...(_parsed.procesos.pulido ? ['pulido'] : []),
+  ];
   for (const t of trabajadores) {
     const wipActual = t.carga_actual || 0;
     const wipMax = wipMaxEnv; // si tienes un campo por trabajador, úsalo
     const capacidadLibreMin = 0; // TODO: derivar de disponibilidad si existe
     const desvioHistorico = desvioMap.get(t.id) ?? 0.3;
-    const match = 0.5; // placeholder si no hay taxonomía de skills
+    const skillArr = normalizeSkills((t as any).skills);
+    const { score: match } = skillOverlap(skillArr, tags);
 
     const wipScore = 1 - normalize(wipActual, 0, Math.max(wipMax, maxWipObserved));
     const capScore = normalize(capacidadLibreMin, 0, maxCap);
@@ -77,7 +93,7 @@ export async function suggestCandidates(pedidoId: number): Promise<Candidate[]> 
       eta = new Date(Date.now() + est * 1000).toISOString();
     } catch {}
 
-    const skills = Array.isArray((t as any).skills) ? (t as any).skills as string[] : [];
+    const skills = Array.isArray((t as any).skills) ? (t as any).skills as string[] : skillArr;
     const saturado = wipActual >= wipMax;
     out.push({ trabajadorId: t.id, nombre: t.usuario?.nombre ?? null, skills, wipActual, wipMax, capacidadLibreMin, desvioHistorico, etaSiToma: eta, saturado, score: Number(score.toFixed(4)) });
   }
@@ -129,3 +145,4 @@ export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'A
 }
 
 export default { suggestCandidates, autoAssignIfEnabled, maybeReassignIfEnabled };
+

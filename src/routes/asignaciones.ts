@@ -9,6 +9,53 @@ const router = Router();
 
 /**
  * @openapi
+ * components:
+ *   schemas:
+ *     Candidate:
+ *       type: object
+ *       properties:
+ *         trabajadorId:
+ *           type: integer
+ *         nombre:
+ *           type: string
+ *           nullable: true
+ *         skills:
+ *           type: array
+ *           items:
+ *             type: string
+ *         wipActual:
+ *           type: integer
+ *         wipMax:
+ *           type: integer
+ *         capacidadLibreMin:
+ *           type: number
+ *         desvioHistorico:
+ *           type: number
+ *         etaSiToma:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         saturado:
+ *           type: boolean
+ *         score:
+ *           type: number
+ *     AutoAssignResponse:
+ *       type: object
+ *       properties:
+ *         autoAssigned:
+ *           type: boolean
+ *         pedidoId:
+ *           type: integer
+ *         trabajadorId:
+ *           type: integer
+ *           nullable: true
+ *         semaforo:
+ *           type: string
+ *           enum: [VERDE, AMARILLO, ROJO]
+ */
+
+/**
+ * @openapi
  * /api/asignar:
  *   post:
  *     tags:
@@ -79,8 +126,8 @@ router.get('/', authenticate, ctrl.listar);
  *             schema:
  *               type: object
  *               properties:
- *                 status: { type: 'string', example: 'success' }
- *                 message: { type: ['string','null'], example: null }
+ *                 status: { type: string, example: success }
+ *                 message: { type: string, nullable: true }
  *                 data:
  *                   type: object
  *                   properties:
@@ -126,8 +173,8 @@ router.get('/suggest', authenticate, requireRole('admin','tornero'), async (req,
  *             schema:
  *               type: object
  *               properties:
- *                 status: { type: 'string', example: 'success' }
- *                 message: { type: ['string','null'], example: null }
+ *                 status: { type: string, example: success }
+ *                 message: { type: string, nullable: true }
  *                 data:
  *                   $ref: '#/components/schemas/AutoAssignResponse'
  *       '404':

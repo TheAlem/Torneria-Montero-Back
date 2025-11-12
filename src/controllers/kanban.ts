@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../prisma/client';
 import { success, fail } from '../utils/response';
 import { logger } from '../utils/logger';
@@ -100,7 +100,7 @@ export const evaluarSemaforo = async (req: Request, res: Response, next: NextFun
     const checked = Number((result as any)?.checked ?? 0);
     const affectedArr = Array.isArray((result as any)?.affected) ? (result as any).affected : [];
     const affectedCount = affectedArr.length;
-    return success(res, { checked, affectedCount, affected: affectedArr, result }, 200, 'Evaluación completada');
+    const responseData = { processed: checked, delayed: affectedCount, checked, affectedCount, total: checked, totalChecked: checked, requiresAttention: affectedCount, affected: affectedArr, result };
+    return success(res, responseData, 200, 'EvaluaciÃ³n completada');
   } catch (err) { next(err); }
 };
-

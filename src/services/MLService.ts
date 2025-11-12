@@ -7,6 +7,7 @@ export async function predictTiempoSec(pedidoId: number, trabajadorId: number): 
   const MAX_SEC = getMaxSeconds();
   const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId } });
   if (!pedido) return 4 * 60 * 60; // 4h fallback
+  const trabajador = await prisma.trabajadores.findUnique({ where: { id: trabajadorId }, select: { skills: true, carga_actual: true, fecha_ingreso: true } }).catch(() => null);
 
   // Preferir histórico del trabajador en pedidos de misma prioridad
   const tiemposTrab = await prisma.tiempos.findMany({
@@ -29,12 +30,16 @@ export async function predictTiempoSec(pedidoId: number, trabajadorId: number): 
 
   // Intentar modelo entrenado (si existe)
   const precioNum = typeof (pedido as any).precio === 'object' || typeof (pedido as any).precio === 'string' ? Number((pedido as any).precio as any) : ((pedido as any).precio ?? 0);
+  const descripcion = (pedido as any).descripcion ?? null;
+  const workerSkills = trabajador?.skills ?? null;
+  const cargaActual = trabajador?.carga_actual ?? null;
+  const fechaIngreso = trabajador?.fecha_ingreso ?? null;
 
   // Linear model (DB then FS)
   {
-    const modelPredDB = await predictWithLatestModel({ prioridad: pedido.prioridad as any, precio: precioNum });
+    const modelPredDB = await predictWithLatestModel({ prioridad: pedido.prioridad as any, precio: precioNum, descripcion, workerSkills, cargaActual, fechaIngreso });
     if (modelPredDB) return Math.min(MAX_SEC, Math.max(MIN_SEC, modelPredDB));
-    const modelPredFS = predictWithLinearModel({ prioridad: pedido.prioridad as any, precio: precioNum });
+    const modelPredFS = predictWithLinearModel({ prioridad: pedido.prioridad as any, precio: precioNum, descripcion, workerSkills, cargaActual, fechaIngreso });
     if (modelPredFS) return Math.min(MAX_SEC, Math.max(MIN_SEC, modelPredFS));
   }
 

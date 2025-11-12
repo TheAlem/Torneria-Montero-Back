@@ -1,5 +1,5 @@
 import { prisma } from '../../prisma/client';
-import { buildFeaturesFromSample } from './features';
+import { buildBaseAndExtraFeatures } from './features';
 import { saveModel, saveModelToDB } from './storage';
 
 function transpose(A: number[][]): number[][] {
@@ -62,13 +62,16 @@ function invertMatrix(M: number[][]): number[][] | null {
 export async function trainLinearDurationModel(limit = 1000) {
   const rows = await prisma.tiempos.findMany({
     where: { estado: 'CERRADO', duracion_sec: { not: null } },
-    include: { pedido: { select: { prioridad: true, precio: true } } },
+    include: {
+      pedido: { select: { prioridad: true, precio: true, descripcion: true } },
+      trabajador: { select: { skills: true, carga_actual: true, fecha_ingreso: true } }
+    },
     orderBy: { id: 'desc' },
     take: limit,
   });
   if (!rows.length) {
     const model = {
-      version: 'v1.0', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const,
+      version: 'v1.1', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const,
       coef: [4 * 3600, 0, 0, 0], meta: { names: ['bias','prio_ALTA','prio_MEDIA','precio'], precioScale: null }
     };
     const path = saveModel(model);
@@ -76,10 +79,12 @@ export async function trainLinearDurationModel(limit = 1000) {
     return { count: 0, path, model, mae: null } as any;
   }
 
-  // Build base features and target
-  const samples = rows.map(r => buildFeaturesFromSample({ pedido: r.pedido as any, tiempo: r }));
-  const Xbase = samples.map(s => s.x); // [bias, isAlta, isMedia, precio]
+  // Build base (4) + extra features and target
+  const samples = rows.map(r => buildBaseAndExtraFeatures({ pedido: r.pedido as any, tiempo: r as any, trabajador: (r as any).trabajador ?? null }));
+  const Xbase = samples.map(s => s.xBase); // [bias, isAlta, isMedia, precio]
   const yBase = samples.map(s => s.y);
+  const extras = samples.map(s => s.extraX);
+  const extraNames = samples[0]?.extraNames || [];
 
   // Clamp target for robustness
   const minSec = Number(process.env.ML_MIN_SECONDS ?? 180);
@@ -111,10 +116,10 @@ export async function trainLinearDurationModel(limit = 1000) {
     const mediaXP = isMedia * scaledPrecio;
     return [bias, isAlta, isMedia, scaledPrecio, precio2, altaXP, mediaXP];
   };
-  const names = ['bias', 'prio_ALTA', 'prio_MEDIA', 'precio', 'precio2', 'prio_ALTA_x_precio', 'prio_MEDIA_x_precio'];
-  const Xtr = trainIdx.map(i => mapRow(Xbase[i]));
+  const names = ['bias', 'prio_ALTA', 'prio_MEDIA', 'precio', 'precio2', 'prio_ALTA_x_precio', 'prio_MEDIA_x_precio', ...extraNames];
+  const Xtr = trainIdx.map(i => [...mapRow(Xbase[i]), ...extras[i]]);
   const ytr = trainIdx.map(i => [yClamped[i]]);
-  const Xva = validIdx.map(i => mapRow(Xbase[i]));
+  const Xva = validIdx.map(i => [...mapRow(Xbase[i]), ...extras[i]]);
   const yva = validIdx.map(i => [yClamped[i]]);
 
   // Normal equation on TRAIN (ridge optional)
@@ -130,7 +135,7 @@ export async function trainLinearDurationModel(limit = 1000) {
   const XtXInv = invertMatrix(XtX);
   if (!XtXInv) {
     const model = {
-      version: 'v1.0', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const,
+      version: 'v1.1', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const,
       coef: [4 * 3600, 0, 0, 0], meta: { names, precioScale: { mean, std } }
     };
     const path = saveModel(model);
@@ -148,9 +153,8 @@ export async function trainLinearDurationModel(limit = 1000) {
   const mae_valid = yhat_va.length ? (yhat_va.reduce((acc, yh, i) => acc + Math.abs(yh - yva[i][0]), 0) / yhat_va.length) : mae_train;
 
   // Persist model with training scale (used at inference)
-  const model = { version: 'v1.0', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const, coef, meta: { names, precioScale: { mean, std } } };
+  const model = { version: 'v1.1', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const, coef, meta: { names, precioScale: { mean, std } } };
   const path = saveModel(model);
   await saveModelToDB(model, { total: rows.length, mae: mae_valid, precision: mae_train });
   return { count: rows.length, path, model, mae: mae_valid, mae_train, mae_valid } as any;
 }
-

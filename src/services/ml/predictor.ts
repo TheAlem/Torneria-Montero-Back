@@ -1,7 +1,7 @@
 import { loadModel, loadLatestModelFromDB, type LinearModel } from './storage';
 import { featuresForPedido } from './features';
 
-export function predictWithLinearModel(input: { prioridad: 'ALTA'|'MEDIA'|'BAJA'; precio?: number|null }): number | null {
+export function predictWithLinearModel(input: { prioridad: 'ALTA'|'MEDIA'|'BAJA'; precio?: number|null; descripcion?: string|null; workerSkills?: any; cargaActual?: number|null; fechaIngreso?: string|Date|null }): number | null {
   // Try filesystem-backed model (sync)
   const model: LinearModel | null = loadModel();
   if (!model) return null;
@@ -11,7 +11,7 @@ export function predictWithLinearModel(input: { prioridad: 'ALTA'|'MEDIA'|'BAJA'
   return Math.max(900, Math.round(yhat));
 }
 
-export async function predictWithLatestModel(input: { prioridad: 'ALTA'|'MEDIA'|'BAJA'; precio?: number|null }): Promise<number | null> {
+export async function predictWithLatestModel(input: { prioridad: 'ALTA'|'MEDIA'|'BAJA'; precio?: number|null; descripcion?: string|null; workerSkills?: any; cargaActual?: number|null; fechaIngreso?: string|Date|null }): Promise<number | null> {
   const model: LinearModel | null = await loadLatestModelFromDB();
   if (!model) return null;
   const x = featuresForPedido(input, model.meta);

@@ -112,10 +112,8 @@
             "type": "integer"
           },
           "nombre": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "skills": {
             "type": "array",
@@ -130,18 +128,16 @@
             "type": "integer"
           },
           "capacidadLibreMin": {
-            "type": "integer"
+            "type": "number"
           },
           "desvioHistorico": {
             "type": "number",
             "format": "float"
           },
           "etaSiToma": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           },
           "saturado": {
             "type": "boolean"
@@ -162,16 +158,11 @@
             "type": "integer"
           },
           "trabajadorId": {
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": "integer",
+            "nullable": true
           },
           "semaforo": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "enum": [
               "VERDE",
               "AMARILLO",
@@ -284,11 +275,8 @@
                       "example": "success"
                     },
                     "message": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "example": null
+                      "type": "string",
+                      "nullable": true
                     },
                     "data": {
                       "type": "object",
@@ -348,11 +336,8 @@
                       "example": "success"
                     },
                     "message": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "example": null
+                      "type": "string",
+                      "nullable": true
                     },
                     "data": {
                       "$ref": "#/components/schemas/AutoAssignResponse"
@@ -896,7 +881,7 @@
         "tags": [
           "ML"
         ],
-        "summary": "Entrenar modelo de estimación de tiempo (solo ADMIN)",
+        "summary": "Entrenar modelo lineal de estimacion de tiempo (solo ADMIN)",
         "security": [
           {
             "BearerAuth": []
@@ -911,7 +896,7 @@
                 "properties": {
                   "limit": {
                     "type": "integer",
-                    "description": "Cantidad máxima de registros de entrenamiento (por defecto 1000)"
+                    "description": "Cantidad maxima de registros de entrenamiento (por defecto 1000)"
                   }
                 }
               }
@@ -937,61 +922,11 @@
         "tags": [
           "ML"
         ],
-        "summary": "Estado del modelo ONNX",
-        "description": "Indica si los archivos del modelo ONNX y meta.json están presentes.",
+        "summary": "Estado del modelo lineal",
+        "description": "Indica si el archivo del modelo lineal esta presente.",
         "responses": {
           "200": {
             "description": "Estado del modelo",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnifiedSuccess"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/ml/train-onnx": {
-      "post": {
-        "tags": [
-          "ML"
-        ],
-        "summary": "Entrenar modelo ONNX (solo ADMIN)",
-        "description": "Ejecuta el script de entrenamiento Python, guarda meta/onnx y recarga la sesión en memoria.",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "provider": {
-                    "type": "string",
-                    "enum": [
-                      "linear",
-                      "onnx"
-                    ],
-                    "description": "Selección del proveedor de entrenamiento/predicción (por defecto 'linear')."
-                  },
-                  "limit": {
-                    "type": "integer",
-                    "description": "Límite de muestras de entrenamiento (por defecto ML_TRAIN_LIMIT)"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "ONNX entrenado",
             "content": {
               "application/json": {
                 "schema": {
