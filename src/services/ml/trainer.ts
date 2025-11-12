@@ -1,5 +1,5 @@
 import { prisma } from '../../prisma/client';
-import { buildFeaturesFromSample, normalizeFeatures } from './features';
+import { buildFeaturesFromSample } from './features';
 import { saveModel, saveModelToDB } from './storage';
 
 function transpose(A: number[][]): number[][] {
@@ -73,18 +73,53 @@ export async function trainLinearDurationModel(limit = 1000) {
     };
     const path = saveModel(model);
     await saveModelToDB(model, { total: 0, mae: null });
-    return { count: 0, path, model, mae: null };
+    return { count: 0, path, model, mae: null } as any;
   }
 
+  // Build base features and target
   const samples = rows.map(r => buildFeaturesFromSample({ pedido: r.pedido as any, tiempo: r }));
-  const Xraw = samples.map(s => s.x);
-  const y = samples.map(s => [s.y]);
-  const { xs: X, meta } = normalizeFeatures(Xraw);
+  const Xbase = samples.map(s => s.x); // [bias, isAlta, isMedia, precio]
+  const yBase = samples.map(s => s.y);
 
-  // Normal equation: beta = (X^T X)^-1 X^T y
-  const Xt = transpose(X);
-  const XtX = matmul(Xt, X);
-  // Ridge regularization (λI) except do not penalize bias term
+  // Clamp target for robustness
+  const minSec = Number(process.env.ML_MIN_SECONDS ?? 180);
+  const maxSec = Number(process.env.ML_MAX_SECONDS ?? 6 * 24 * 3600);
+  const yClamped = yBase.map(v => Math.min(maxSec, Math.max(minSec, v)));
+
+  // Shuffle/split indices (80/20)
+  const idx = Array.from({ length: Xbase.length }, (_, i) => i);
+  for (let i = idx.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [idx[i], idx[j]] = [idx[j], idx[i]];
+  }
+  const split = Math.max(1, Math.floor(0.8 * idx.length));
+  const trainIdx = idx.slice(0, split);
+  const validIdx = idx.slice(split);
+
+  // Compute scaling from TRAIN only
+  const precioTrain = trainIdx.map(i => Xbase[i][3] ?? 0);
+  const mean = precioTrain.reduce((a, b) => a + b, 0) / (precioTrain.length || 1);
+  const variance = precioTrain.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (precioTrain.length || 1);
+  const std = Math.sqrt(variance) || 1;
+  const mapRow = (row: number[]) => {
+    const bias = row[0];
+    const isAlta = row[1];
+    const isMedia = row[2];
+    const scaledPrecio = ((row[3] ?? 0) - mean) / std;
+    const precio2 = scaledPrecio * scaledPrecio;
+    const altaXP = isAlta * scaledPrecio;
+    const mediaXP = isMedia * scaledPrecio;
+    return [bias, isAlta, isMedia, scaledPrecio, precio2, altaXP, mediaXP];
+  };
+  const names = ['bias', 'prio_ALTA', 'prio_MEDIA', 'precio', 'precio2', 'prio_ALTA_x_precio', 'prio_MEDIA_x_precio'];
+  const Xtr = trainIdx.map(i => mapRow(Xbase[i]));
+  const ytr = trainIdx.map(i => [yClamped[i]]);
+  const Xva = validIdx.map(i => mapRow(Xbase[i]));
+  const yva = validIdx.map(i => [yClamped[i]]);
+
+  // Normal equation on TRAIN (ridge optional)
+  const Xt_tr = transpose(Xtr);
+  const XtX = matmul(Xt_tr, Xtr);
   const lambda = Number(process.env.ML_RIDGE_LAMBDA || 0);
   if (lambda && isFinite(lambda) && lambda > 0) {
     for (let i = 0; i < XtX.length; i++) {
@@ -96,22 +131,26 @@ export async function trainLinearDurationModel(limit = 1000) {
   if (!XtXInv) {
     const model = {
       version: 'v1.0', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const,
-      coef: [4 * 3600, 0, 0, 0], meta
+      coef: [4 * 3600, 0, 0, 0], meta: { names, precioScale: { mean, std } }
     };
     const path = saveModel(model);
     await saveModelToDB(model, { total: rows.length, mae: null });
-    return { count: rows.length, path, model, mae: null };
+    return { count: rows.length, path, model, mae: null } as any;
   }
-  const XtY = matmul(Xt, y);
-  const B = matmul(XtXInv, XtY); // shape (p x 1)
+  const XtY_tr = matmul(Xt_tr, ytr);
+  const B = matmul(XtXInv, XtY_tr); // shape (p x 1)
   const coef = B.map(r => r[0]);
-  const model = { version: 'v1.0', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const, coef, meta };
+
+  const predict = (X: number[][]) => X.map(row => coef.reduce((s, c, i) => s + c * (row[i] ?? 0), 0));
+  const yhat_tr = predict(Xtr);
+  const mae_train = yhat_tr.reduce((acc, yh, i) => acc + Math.abs(yh - ytr[i][0]), 0) / yhat_tr.length;
+  const yhat_va = predict(Xva);
+  const mae_valid = yhat_va.length ? (yhat_va.reduce((acc, yh, i) => acc + Math.abs(yh - yva[i][0]), 0) / yhat_va.length) : mae_train;
+
+  // Persist model with training scale (used at inference)
+  const model = { version: 'v1.0', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const, coef, meta: { names, precioScale: { mean, std } } };
   const path = saveModel(model);
-
-  // Compute MAE on training set (X, y)
-  const yhat = X.map(row => coef.reduce((s, c, i) => s + c * (row[i] ?? 0), 0));
-  const mae = yhat.reduce((acc, yh, i) => acc + Math.abs(yh - y[i][0]), 0) / yhat.length;
-
-  await saveModelToDB(model, { total: rows.length, mae });
-  return { count: rows.length, path, model, mae };
+  await saveModelToDB(model, { total: rows.length, mae: mae_valid, precision: mae_train });
+  return { count: rows.length, path, model, mae: mae_valid, mae_train, mae_valid } as any;
 }
+
