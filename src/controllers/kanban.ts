@@ -101,6 +101,6 @@ export const evaluarSemaforo = async (req: Request, res: Response, next: NextFun
     const affectedArr = Array.isArray((result as any)?.affected) ? (result as any).affected : [];
     const affectedCount = affectedArr.length;
     const responseData = { processed: checked, delayed: affectedCount, checked, affectedCount, total: checked, totalChecked: checked, requiresAttention: affectedCount, affected: affectedArr, result };
-    return success(res, responseData, 200, 'EvaluaciÃ³n completada');
+    return success(res, responseData, 200, 'Evaluación completada');
   } catch (err) { next(err); }
 };

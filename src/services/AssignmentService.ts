@@ -98,9 +98,17 @@ export async function suggestCandidates(pedidoId: number): Promise<Candidate[]> 
     out.push({ trabajadorId: t.id, nombre: t.usuario?.nombre ?? null, skills, wipActual, wipMax, capacidadLibreMin, desvioHistorico, etaSiToma: eta, saturado, score: Number(score.toFixed(4)) });
   }
 
-  return out
-    .sort((a, b) => b.score - a.score)
-    .sort((a, b) => Number(a.saturado) - Number(b.saturado));
+  // Orden único con tie-breakers:
+  // 1) No saturados primero
+  // 2) Score descendente
+  // 3) ETA ascendente (si ambos tienen)
+  return out.sort((a, b) => {
+    if (a.saturado !== b.saturado) return Number(a.saturado) - Number(b.saturado);
+    if (b.score !== a.score) return b.score - a.score;
+    const ta = a.etaSiToma ? new Date(a.etaSiToma).getTime() : Number.POSITIVE_INFINITY;
+    const tb = b.etaSiToma ? new Date(b.etaSiToma).getTime() : Number.POSITIVE_INFINITY;
+    return ta - tb;
+  });
 }
 
 export async function autoAssignIfEnabled(pedidoId: number): Promise<boolean> {

@@ -1,4 +1,4 @@
-import type { Request, Response, NextFunction } from 'express';
+﻿import type { Request, Response, NextFunction } from 'express';
 import { prisma } from '../prisma/client';
 import { success, fail } from '../utils/response';
 import crypto from 'crypto';
@@ -50,7 +50,7 @@ export const validar = async (req: Request, res: Response, next: NextFunction) =
   try {
     const token = String(req.params.token);
     const entry = await getValidToken(token);
-    if (!entry) return fail(res, 'AUTH_ERROR', 'Token inválido o expirado', 401);
+    if (!entry) return fail(res, 'AUTH_ERROR', 'Token invÃ¡lido o expirado', 401);
 
     const { cliente } = entry;
     return success(res, {
@@ -67,21 +67,21 @@ export const completar = async (req: Request, res: Response, next: NextFunction)
     const JWT_SECRET = process.env.JWT_SECRET as string;
     const token = String(req.params.token);
     const { password } = req.body as any;
-    if (!password || String(password).length < 6) return fail(res, 'VALIDATION_ERROR', 'Contraseña inválida', 400);
+    if (!password || String(password).length < 6) return fail(res, 'VALIDATION_ERROR', 'ContraseÃ±a invÃ¡lida', 400);
 
     const entry = await getValidToken(token);
-    if (!entry) return fail(res, 'AUTH_ERROR', 'Token inválido o expirado', 401);
+    if (!entry) return fail(res, 'AUTH_ERROR', 'Token invÃ¡lido o expirado', 401);
 
     const cliente = await prisma.clientes.findUnique({ where: { id: entry.cliente_id } });
     if (!cliente) return fail(res, 'NOT_FOUND', 'Cliente no encontrado', 404);
-    if (cliente.usuario_id) return fail(res, 'CONFLICT', 'Cliente ya está vinculado a un usuario', 409);
+    if (cliente.usuario_id) return fail(res, 'CONFLICT', 'Cliente ya estÃ¡ vinculado a un usuario', 409);
 
     const hash = await bcrypt.hash(String(password), 10);
-    // Email requerido por esquema: usar email real si existe o uno sintético único
+    // Email requerido por esquema: usar email real si existe o uno sintÃ©tico Ãºnico
     const syntheticEmail = `cliente-${cliente.id}@qr.local`;
     const email = cliente.email || syntheticEmail;
 
-    // Evitar colisión si existiera un usuario con ese email
+    // Evitar colisiÃ³n si existiera un usuario con ese email
     const existing = await prisma.usuarios.findUnique({ where: { email } }).catch(() => null);
     const finalEmail = existing ? `cliente-${cliente.id}-${Date.now()}@qr.local` : email;
 
@@ -107,4 +107,6 @@ export const completar = async (req: Request, res: Response, next: NextFunction)
     return success(res, { token: jwtToken, profile: { id: user.id, email: user.email, role: user.rol } }, 201);
   } catch (err) { next(err); }
 };
+
+
 

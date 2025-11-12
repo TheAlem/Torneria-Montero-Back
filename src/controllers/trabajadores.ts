@@ -22,8 +22,25 @@ export const obtener = async (req: Request, res: Response, next: NextFunction) =
 export const actualizar = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = Number(req.params.id);
-    const { direccion, rol_tecnico, estado } = req.body;
-    const w = await prisma.trabajadores.update({ where: { id }, data: { direccion, rol_tecnico, estado } });
+    const body = (req.body || {}) as any;
+    const { direccion, rol_tecnico, estado, skills, carga_actual, disponibilidad } = body;
+
+    const data: any = {};
+    if (typeof direccion !== 'undefined') data.direccion = direccion;
+    if (typeof rol_tecnico !== 'undefined') data.rol_tecnico = rol_tecnico;
+    if (typeof estado !== 'undefined') data.estado = estado;
+    if (typeof skills !== 'undefined') data.skills = skills; // JSON array o libre
+    if (typeof disponibilidad !== 'undefined') data.disponibilidad = disponibilidad; // JSON libre
+    if (typeof carga_actual !== 'undefined') {
+      const n = Number(carga_actual);
+      if (Number.isFinite(n)) data.carga_actual = n;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return fail(res, 'VALIDATION_ERROR', 'No hay campos para actualizar', 422);
+    }
+
+    const w = await prisma.trabajadores.update({ where: { id }, data });
     return success(res, w);
   } catch (err) { next(err); }
 };
