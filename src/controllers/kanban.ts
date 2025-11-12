@@ -5,7 +5,6 @@ import { logger } from '../utils/logger';
 import { evaluateAndNotify } from '../services/KanbanMonitorService';
 import { transitionEstado } from '../services/PedidoWorkflow';
 import { computeSemaforoForPedido } from '../services/SemaforoService';
-// enum types from Prisma removed to avoid direct dependency on generated client
 
 // Common select for kanban cards to ensure consistency
 const kanbanCardSelect = {
@@ -26,14 +25,11 @@ const kanbanCardSelect = {
  */
 export const listarKanban = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { q, workerId, clientId, priority, limit = '50' } = req.query;
+    const { q, workerId, clientId, priority, limit = '50' } = req.query as Record<string, string | undefined>;
 
-    const parsedLimit = Math.min(parseInt(limit as string, 10) || 50, 200);
+    const parsedLimit = Math.min(parseInt(String(limit), 10) || 50, 200);
 
-    const baseWhere: any = {
-      AND: [],
-    };
-
+    const baseWhere: any = { AND: [] };
     if (workerId) baseWhere.AND.push({ responsable_id: Number(workerId) });
     if (clientId) baseWhere.AND.push({ cliente_id: Number(clientId) });
     if (priority) baseWhere.AND.push({ prioridad: priority as any });
@@ -46,18 +42,19 @@ export const listarKanban = async (req: Request, res: Response, next: NextFuncti
       };
       baseWhere.AND.push(searchQuery);
     }
-    // Normalizar posibles variantes del enum (evita fallos por typos o migraciones inconsistentes)
+
+    // Normalize legacy enum variants
     const normalizeEstado = (s: string) => {
       if (!s) return s;
       const map: Record<string, string> = {
-        'EN_PROCESO': 'EN_PROGRESO', // posible valor en migraciones antiguas
-        'EN_PROGRESO': 'EN_PROGRESO',
-        'PENDIENTE': 'PENDIENTE',
-        'QA': 'QA',
-        'ENTREGADO': 'ENTREGADO',
-        'ASIGNADO': 'ASIGNADO'
-      };
-      return map[s] ?? s;
+        EN_PROCESO: 'EN_PROGRESO',
+        EN_PROGRESO: 'EN_PROGRESO',
+        PENDIENTE: 'PENDIENTE',
+        QA: 'QA',
+        ENTREGADO: 'ENTREGADO',
+        ASIGNADO: 'ASIGNADO',
+      } as any;
+      return (map as any)[s] ?? s;
     };
 
     const [pending, inProgress, qa, delivered] = await Promise.all([
@@ -67,7 +64,7 @@ export const listarKanban = async (req: Request, res: Response, next: NextFuncti
       prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('ENTREGADO') }, select: kanbanCardSelect, orderBy: { fecha_actualizacion: 'desc' }, take: parsedLimit }),
     ]);
 
-  return success(res, { columns: { PENDIENTE: pending, EN_PROGRESO: inProgress, QA: qa, ENTREGADO: delivered } });
+    return success(res, { columns: { PENDIENTE: pending, EN_PROGRESO: inProgress, QA: qa, ENTREGADO: delivered } });
   } catch (err) {
     next(err);
   }
@@ -78,29 +75,32 @@ export const listarKanban = async (req: Request, res: Response, next: NextFuncti
  */
 export const cambiarEstado = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
-    const { newStatus, note, userId } = req.body;
+    const { id } = req.params as any;
+    const { newStatus, note, userId } = req.body || {};
 
-  const pedido = await transitionEstado(Number(id), newStatus, { note, userId });
-  // Métricas de semáforo para tooltip inmediato en la UI
-  let semaforoMetrics: any = null;
-  try { semaforoMetrics = await computeSemaforoForPedido(Number(id)); } catch {}
-  logger.info({ msg: '[Kanban] Estado cambiado', id, newStatus, userId });
-  return success(res, { ok: true, pedido, semaforo: semaforoMetrics?.color ?? pedido?.semaforo ?? null, metrics: semaforoMetrics });
+    const pedido = await transitionEstado(Number(id), newStatus, { note, userId });
+    // Metrics for tooltip
+    let semaforoMetrics: any = null;
+    try { semaforoMetrics = await computeSemaforoForPedido(Number(id)); } catch {}
+    logger.info({ msg: '[Kanban] Estado cambiado', id, newStatus, userId });
+    return success(res, { ok: true, pedido, semaforo: semaforoMetrics?.color ?? pedido?.semaforo ?? null, metrics: semaforoMetrics });
   } catch (err) {
     next(err);
   }
 };
 
 /**
- * Dispara una evaluación del semáforo y notificaciones (ADMIN / operador).
+ * Triggers a semaphore evaluation and notifications (ADMIN / operator).
  */
 export const evaluarSemaforo = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Por defecto, la evaluación manual NO reasigna automáticamente.
-    // Permite forzar reasignación pasando ?autoReassign=true
+    // By default, manual evaluation DOES NOT auto reassign. ?autoReassign=true to allow.
     const autoReassign = String((req.query?.autoReassign as string) || 'false').toLowerCase() === 'true';
     const result = await evaluateAndNotify({ suggestOnly: !autoReassign });
-    return success(res, { result }, 200, 'Evaluación de semáforo completada');
+    const checked = Number((result as any)?.checked ?? 0);
+    const affectedArr = Array.isArray((result as any)?.affected) ? (result as any).affected : [];
+    const affectedCount = affectedArr.length;
+    return success(res, { checked, affectedCount, affected: affectedArr, result }, 200, 'Evaluación completada');
   } catch (err) { next(err); }
 };
+

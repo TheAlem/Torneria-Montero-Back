@@ -10,7 +10,7 @@ const router = Router();
  *   post:
  *     tags:
  *       - ML
- *     summary: Entrenar modelo de estimación de tiempo (solo ADMIN)
+ *     summary: Entrenar modelo lineal de estimacion de tiempo (solo ADMIN)
  *     security:
  *       - BearerAuth: []
  *     requestBody:
@@ -22,7 +22,7 @@ const router = Router();
  *             properties:
  *               limit:
  *                 type: integer
- *                 description: Cantidad máxima de registros de entrenamiento (por defecto 1000)
+ *                 description: Cantidad maxima de registros de entrenamiento (por defecto 1000)
  *     responses:
  *       '201':
  *         description: Modelo entrenado
@@ -39,8 +39,8 @@ router.post('/train', authenticate, requireRole('admin'), ctrl.train);
  *   get:
  *     tags:
  *       - ML
- *     summary: Estado del modelo ONNX
- *     description: Indica si los archivos del modelo ONNX y meta.json están presentes.
+ *     summary: Estado del modelo lineal
+ *     description: Indica si el archivo del modelo lineal esta presente.
  *     responses:
  *       '200':
  *         description: Estado del modelo
@@ -49,42 +49,8 @@ router.post('/train', authenticate, requireRole('admin'), ctrl.train);
  *             schema:
  *               $ref: '#/components/schemas/UnifiedSuccess'
  */
-// Healthcheck simple del modelo ONNX (sin auth)
+// Healthcheck del modelo lineal (sin auth)
 router.get('/status', ctrl.status);
-
-/**
- * @openapi
- * /ml/train-onnx:
- *   post:
- *     tags:
- *       - ML
- *     summary: Entrenar modelo ONNX (solo ADMIN)
- *     description: Ejecuta el script de entrenamiento Python, guarda meta/onnx y recarga la sesión en memoria.
- *     security:
- *       - BearerAuth: []
- *     requestBody:
- *       required: false
- *       content:
- *         application/json:
- *           schema:
- *             type: object
-  *             properties:
-  *               provider:
-  *                 type: string
-  *                 enum: [linear, onnx]
-  *                 description: Selección del proveedor de entrenamiento/predicción (por defecto 'linear').
-  *               limit:
- *                 type: integer
- *                 description: Límite de muestras de entrenamiento (por defecto ML_TRAIN_LIMIT)
- *     responses:
- *       '201':
- *         description: ONNX entrenado
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/UnifiedSuccess'
- */
-router.post('/train-onnx', authenticate, requireRole('admin'), ctrl.trainOnnx);
 
 export default router;
 

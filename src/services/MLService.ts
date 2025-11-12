@@ -1,11 +1,10 @@
 import { prisma } from '../prisma/client';
 import { predictWithLinearModel, predictWithLatestModel } from './ml/predictor';
-import { featuresForPedido, type FeatureMeta } from './ml/features';
-import { onnxPredict } from './ml/onnx';
-import { getModelPath, getMinSeconds, loadMetaFromFile } from './ml/storage';
+import { getMinSeconds, getMaxSeconds } from './ml/storage';
 
 export async function predictTiempoSec(pedidoId: number, trabajadorId: number): Promise<number> {
   const MIN_SEC = getMinSeconds();
+  const MAX_SEC = getMaxSeconds();
   const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId } });
   if (!pedido) return 4 * 60 * 60; // 4h fallback
 
@@ -25,37 +24,24 @@ export async function predictTiempoSec(pedidoId: number, trabajadorId: number): 
   const arr = (mismos.length >= 5 ? mismos : generales);
   if (arr.length) {
     const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
-    return Math.max(MIN_SEC, Math.round(avg));
+    return Math.min(MAX_SEC, Math.max(MIN_SEC, Math.round(avg)));
   }
 
   // Intentar modelo entrenado (si existe)
   const precioNum = typeof (pedido as any).precio === 'object' || typeof (pedido as any).precio === 'string' ? Number((pedido as any).precio as any) : ((pedido as any).precio ?? 0);
 
-  // ONNX provider (optional via ENV)
-  if (String(process.env.ML_PROVIDER || 'linear').toLowerCase() === 'onnx') {
-    try {
-      // meta preferentemente desde DB, si no desde archivo
-      const latest = await prisma.historico_modelo.findFirst({ orderBy: { fecha_entrenamiento: 'desc' } });
-      const fileMeta = loadMetaFromFile();
-      const meta: FeatureMeta = (latest?.parametros as any)?.meta || fileMeta || { names: ['bias','prio_ALTA','prio_MEDIA','precio'], precioScale: null };
-      const x = featuresForPedido({ prioridad: pedido.prioridad as any, precio: precioNum }, meta);
-      const y = await onnxPredict(x, getModelPath());
-      if (Number.isFinite(y)) return Math.max(MIN_SEC, Math.round(Number(y)));
-    } catch (_) { /* ignore and fallback */ }
-  }
-
   // Linear model (DB then FS)
   {
     const modelPredDB = await predictWithLatestModel({ prioridad: pedido.prioridad as any, precio: precioNum });
-    if (modelPredDB) return Math.max(MIN_SEC, modelPredDB);
+    if (modelPredDB) return Math.min(MAX_SEC, Math.max(MIN_SEC, modelPredDB));
     const modelPredFS = predictWithLinearModel({ prioridad: pedido.prioridad as any, precio: precioNum });
-    if (modelPredFS) return Math.max(MIN_SEC, modelPredFS);
+    if (modelPredFS) return Math.min(MAX_SEC, Math.max(MIN_SEC, modelPredFS));
   }
 
   // Fallback por prioridad
-  if (pedido.prioridad === 'ALTA') return 3 * 60 * 60;
-  if (pedido.prioridad === 'MEDIA') return 6 * 60 * 60;
-  return 8 * 60 * 60;
+  if (pedido.prioridad === 'ALTA') return Math.min(MAX_SEC, 3 * 60 * 60);
+  if (pedido.prioridad === 'MEDIA') return Math.min(MAX_SEC, 6 * 60 * 60);
+  return Math.min(MAX_SEC, 8 * 60 * 60);
 }
 
 export async function storePrediccion(pedidoId: number, trabajadorId: number, tEstimadoSec: number) {

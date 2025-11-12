@@ -4,8 +4,6 @@ dotenv.config();
 
 // When running via ts-node/esm import the compiled JS path
 import app from './app';
-import { ensureOnnxLoaded } from './services/ml/onnx';
-import { getModelPath } from './services/ml/storage';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
@@ -35,16 +33,9 @@ app.listen(PORT, () => {
       const ms = Math.max(1000, next.getTime() - now.getTime());
       setTimeout(async () => {
         try {
-          const provider = String(process.env.ML_PROVIDER || 'linear').toLowerCase();
-          if (provider === 'onnx') {
-            const { trainOnnxModel } = await import('./services/ml/onnxTrainer');
-            const result = await trainOnnxModel(limit);
-            logger.info({ msg: '[ML] ONNX entrenado', mae_sec: result.mae_sec, onnx: result.pathOnnx });
-          } else {
-            const { trainLinearDurationModel } = await import('./services/ml/trainer');
-            const result = await trainLinearDurationModel(limit);
-            logger.info({ msg: '[ML] Modelo entrenado', count: result.count, version: result.model.version });
-          }
+          const { trainLinearDurationModel } = await import('./services/ml/trainer');
+          const result = await trainLinearDurationModel(limit);
+          logger.info({ msg: '[ML] Modelo entrenado', count: result.count, version: result.model.version });
           try {
             const { default: RealtimeService } = await import('./realtime/RealtimeService');
             RealtimeService.emitWebAlert('ML_TRAINED', 'Modelo ML entrenado', {});
@@ -59,14 +50,4 @@ app.listen(PORT, () => {
     };
     scheduleNext();
   }
-
-  // Carga previa del modelo ONNX (si se selecciona el provider)
-  try {
-    const provider = String(process.env.ML_PROVIDER || '').toLowerCase();
-    if (provider === 'onnx') {
-      ensureOnnxLoaded(getModelPath())
-        .then(() => logger.info('[ML] ONNX cargado'))
-        .catch(() => logger.warn('[ML] ONNX no disponible (fallback)'));
-    }
-  } catch {}
 });

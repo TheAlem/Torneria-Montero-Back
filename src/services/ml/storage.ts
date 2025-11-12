@@ -38,14 +38,17 @@ export function loadModel(name?: string): LinearModel | null {
   try { return JSON.parse(raw) as LinearModel; } catch { return null; }
 }
 
-export async function saveModelToDB(model: LinearModel) {
+export async function saveModelToDB(
+  model: LinearModel,
+  opts?: { total?: number | null; mae?: number | null; precision?: number | null }
+) {
   try {
     const rec = await prisma.historico_modelo.create({
       data: {
         fecha_entrenamiento: new Date(),
-        total_pedidos: null,
-        mae: null,
-        precision: null,
+        total_pedidos: typeof opts?.total === 'number' ? opts!.total : null,
+        mae: typeof opts?.mae === 'number' ? opts!.mae : null,
+        precision: typeof opts?.precision === 'number' ? opts!.precision : null,
         parametros: model as any,
       }
     });
@@ -69,6 +72,11 @@ export function getModelPath() {
 export function getMinSeconds() {
   const v = Number(process.env.ML_MIN_SECONDS ?? 900);
   return Number.isFinite(v) ? v : 900;
+}
+
+export function getMaxSeconds() {
+  const v = Number(process.env.ML_MAX_SECONDS ?? 172800); // 48h por defecto
+  return Number.isFinite(v) ? v : 172800;
 }
 
 export function loadMetaFromFile(): any | null {

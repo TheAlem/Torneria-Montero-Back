@@ -72,8 +72,8 @@ export async function trainLinearDurationModel(limit = 1000) {
       coef: [4 * 3600, 0, 0, 0], meta: { names: ['bias','prio_ALTA','prio_MEDIA','precio'], precioScale: null }
     };
     const path = saveModel(model);
-    await saveModelToDB(model);
-    return { count: 0, path, model };
+    await saveModelToDB(model, { total: 0, mae: null });
+    return { count: 0, path, model, mae: null };
   }
 
   const samples = rows.map(r => buildFeaturesFromSample({ pedido: r.pedido as any, tiempo: r }));
@@ -99,13 +99,19 @@ export async function trainLinearDurationModel(limit = 1000) {
       coef: [4 * 3600, 0, 0, 0], meta
     };
     const path = saveModel(model);
-    return { count: rows.length, path, model };
+    await saveModelToDB(model, { total: rows.length, mae: null });
+    return { count: rows.length, path, model, mae: null };
   }
   const XtY = matmul(Xt, y);
   const B = matmul(XtXInv, XtY); // shape (p x 1)
   const coef = B.map(r => r[0]);
   const model = { version: 'v1.0', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const, coef, meta };
   const path = saveModel(model);
-  await saveModelToDB(model);
-  return { count: rows.length, path, model };
+
+  // Compute MAE on training set (X, y)
+  const yhat = X.map(row => coef.reduce((s, c, i) => s + c * (row[i] ?? 0), 0));
+  const mae = yhat.reduce((acc, yh, i) => acc + Math.abs(yh - y[i][0]), 0) / yhat.length;
+
+  await saveModelToDB(model, { total: rows.length, mae });
+  return { count: rows.length, path, model, mae };
 }
