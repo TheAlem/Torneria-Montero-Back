@@ -8,7 +8,7 @@ import { suggestCandidates, maybeReassignIfEnabled } from './AssignmentService';
 export async function evaluateAndNotify(options?: { suggestOnly?: boolean }) {
   const now = new Date();
   const activos = await prisma.pedidos.findMany({
-    where: { estado: { in: ['PENDIENTE','ASIGNADO','EN_PROGRESO','QA'] } },
+    where: { eliminado: false, estado: { in: ['PENDIENTE','ASIGNADO','EN_PROGRESO','QA'] } },
     include: { cliente: true, responsable: true }
   });
   const affected: any[] = [];

@@ -8,14 +8,17 @@ import RealtimeService from '../realtime/RealtimeService';
 
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { page = 1, limit = 10 } = req.query as any;
+    const { page = 1, limit = 10, includeDeleted } = req.query as any;
+    const onlyVisible = String(includeDeleted || 'false').toLowerCase() !== 'true';
+    const where: any = onlyVisible ? { eliminado: false } : {};
     const pedidos = await prisma.pedidos.findMany({
+      where,
       include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } } },
       orderBy: { fecha_actualizacion: 'desc' },
       skip: (Number(page) - 1) * Number(limit),
       take: Number(limit),
     });
-    const total = await prisma.pedidos.count();
+    const total = await prisma.pedidos.count({ where });
     return success(res, { pedidos, total, page: Number(page), limit: Number(limit) });
   } catch (err) { next(err); }
 };
@@ -25,6 +28,10 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
     const id = Number(req.params.id);
     const pedido = await prisma.pedidos.findUnique({ where: { id }, include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } }, asignaciones: true, tiempos: true } });
     if (!pedido) return fail(res, 'NOT_FOUND', 'Pedido no encontrado', 404);
+    // Ocultar eliminados salvo que lo pidan explícitamente
+    const { includeDeleted } = req.query as any;
+    const onlyVisible = String(includeDeleted || 'false').toLowerCase() !== 'true';
+    if (onlyVisible && (pedido as any).eliminado) return fail(res, 'NOT_FOUND', 'Pedido no encontrado', 404);
     return success(res, pedido);
   } catch (err) { next(err); }
 };

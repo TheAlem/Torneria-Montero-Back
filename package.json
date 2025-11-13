@@ -10,7 +10,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "openapi:generate": "tsx generate-openapi.ts",
-    "ml:gen-csv": "tsx scripts/generate_dataset.ts"
+    "ml:gen-csv": "tsx scripts/generate_train.ts",
+    "ml:import-csv": "tsx scripts/import_training_csv.ts datasets/train_full.csv"
   },
   "keywords": [],
   "author": "",
@@ -33,6 +34,7 @@
   },
   "dependencies": {
     "@prisma/engines": "6.16.2",
+    "@tensorflow/tfjs-node": "^4.22.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",

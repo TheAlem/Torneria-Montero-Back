@@ -29,7 +29,7 @@ export const listarKanban = async (req: Request, res: Response, next: NextFuncti
 
     const parsedLimit = Math.min(parseInt(String(limit), 10) || 50, 200);
 
-    const baseWhere: any = { AND: [] };
+    const baseWhere: any = { AND: [{ eliminado: false }] };
     if (workerId) baseWhere.AND.push({ responsable_id: Number(workerId) });
     if (clientId) baseWhere.AND.push({ cliente_id: Number(clientId) });
     if (priority) baseWhere.AND.push({ prioridad: priority as any });
