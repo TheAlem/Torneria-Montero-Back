@@ -1,9 +1,9 @@
 import type { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { prisma } from '../prisma/client';
-import { success, fail, fieldsValidation } from '../utils/response';
-import { logger } from '../utils/logger';
+import { prisma } from '../prisma/client.js';
+import { success, fail, fieldsValidation } from '../utils/response.js';
+import { logger } from '../utils/logger.js';
 
 export const register = async (req: Request, res: Response, next: NextFunction) => {
   try {

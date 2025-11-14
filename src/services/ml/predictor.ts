@@ -1,5 +1,5 @@
-import { loadModel, loadLatestModelFromDB, type LinearModel } from './storage';
-import { featuresForPedido } from './features';
+import { loadModel, loadLatestModelFromDB, type LinearModel } from './storage.js';
+import { featuresForPedido } from './features.js';
 
 export function predictWithLinearModel(input: { prioridad: 'ALTA'|'MEDIA'|'BAJA'; precio?: number|null; descripcion?: string|null; workerSkills?: any; cargaActual?: number|null; fechaIngreso?: string|Date|null }): number | null {
   // Try filesystem-backed model (sync)

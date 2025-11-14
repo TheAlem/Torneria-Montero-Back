@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
-import { logger } from '../utils/logger';
-import { fail } from '../utils/response';
+import { logger } from '../utils/logger.js';
+import { fail } from '../utils/response.js';
 
 export default function errorHandler(err: any, req: Request, res: Response, _next: NextFunction) {
   // Log legible en servidor

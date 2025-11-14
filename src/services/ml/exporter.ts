@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { prisma } from '../../prisma/client';
+import { prisma } from '../../prisma/client.js';
 
 function datasetsDir() {
   return path.resolve(process.cwd(), 'datasets');

@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import fs from 'fs';
-import { trainLinearDurationModelTF } from '../services/ml/train-tensor';
-import { success } from '../utils/response';
+import { trainLinearDurationModelTF } from '../services/ml/train-tensor.js';
+import { success } from '../utils/response.js';
 
 export const train = async (req: Request, res: Response, next: NextFunction) => {
   try {

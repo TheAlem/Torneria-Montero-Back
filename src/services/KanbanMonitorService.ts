@@ -1,10 +1,10 @@
-import { prisma } from '../prisma/client';
-import NotificationService from './notificationService';
-import { predictTiempoSec } from './MLService';
-import { logger } from '../utils/logger';
-import RealtimeService from '../realtime/RealtimeService';
-import { applyAndEmitSemaforo } from './SemaforoService';
-import { suggestCandidates, maybeReassignIfEnabled } from './AssignmentService';
+import { prisma } from '../prisma/client.js';
+import NotificationService from './notificationService.js';
+import { predictTiempoSec } from './MLService.js';
+import { logger } from '../utils/logger.js';
+import RealtimeService from '../realtime/RealtimeService.js';
+import { applyAndEmitSemaforo } from './SemaforoService.js';
+import { suggestCandidates, maybeReassignIfEnabled } from './AssignmentService.js';
 export async function evaluateAndNotify(options?: { suggestOnly?: boolean }) {
   const now = new Date();
   const activos = await prisma.pedidos.findMany({

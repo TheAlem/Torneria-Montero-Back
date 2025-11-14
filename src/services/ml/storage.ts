@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { prisma } from '../../prisma/client';
+import { prisma } from '../../prisma/client.js';
 
 export type LinearModel = {
   version: string;

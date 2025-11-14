@@ -1,10 +1,10 @@
 ﻿import type { Request, Response, NextFunction } from 'express';
-import { prisma } from '../prisma/client';
-import * as PedidoService from '../services/PedidoService';
-import { success, fail, fieldsValidation } from '../utils/response';
-import { UpdatePedidoSchema } from '../validators/pedidoValidator';
-import { transitionEstado } from '../services/PedidoWorkflow';
-import RealtimeService from '../realtime/RealtimeService';
+import { prisma } from '../prisma/client.js';
+import * as PedidoService from '../services/PedidoService.js';
+import { success, fail, fieldsValidation } from '../utils/response.js';
+import { UpdatePedidoSchema } from '../validators/pedidoValidator.js';
+import { transitionEstado } from '../services/PedidoWorkflow.js';
+import RealtimeService from '../realtime/RealtimeService.js';
 
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
   try {

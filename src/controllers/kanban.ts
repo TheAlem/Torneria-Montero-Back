@@ -1,10 +1,10 @@
 ﻿import { Request, Response, NextFunction } from 'express';
-import { prisma } from '../prisma/client';
-import { success, fail } from '../utils/response';
-import { logger } from '../utils/logger';
-import { evaluateAndNotify } from '../services/KanbanMonitorService';
-import { transitionEstado } from '../services/PedidoWorkflow';
-import { computeSemaforoForPedido } from '../services/SemaforoService';
+import { prisma } from '../prisma/client.js';
+import { success, fail } from '../utils/response.js';
+import { logger } from '../utils/logger.js';
+import { evaluateAndNotify } from '../services/KanbanMonitorService.js';
+import { transitionEstado } from '../services/PedidoWorkflow.js';
+import { computeSemaforoForPedido } from '../services/SemaforoService.js';
 
 // Common select for kanban cards to ensure consistency
 const kanbanCardSelect = {

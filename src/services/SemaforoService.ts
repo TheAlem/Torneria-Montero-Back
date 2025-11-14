@@ -1,6 +1,6 @@
-import { prisma } from '../prisma/client';
-import { predictTiempoSec } from './MLService';
-import RealtimeService from '../realtime/RealtimeService';
+import { prisma } from '../prisma/client.js';
+import { predictTiempoSec } from './MLService.js';
+import RealtimeService from '../realtime/RealtimeService.js';
 
 export type SemaforoColor = 'VERDE' | 'AMARILLO' | 'ROJO';
 

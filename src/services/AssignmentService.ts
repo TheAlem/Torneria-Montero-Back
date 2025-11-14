@@ -1,8 +1,8 @@
-import { prisma } from '../prisma/client';
-import { predictTiempoSec } from './MLService';
-import { applyAndEmitSemaforo, computeSemaforoForPedido } from './SemaforoService';
-import RealtimeService from '../realtime/RealtimeService';
-import { parseDescripcion, normalizeSkills, skillOverlap } from './ml/features';
+import { prisma } from '../prisma/client.js';
+import { predictTiempoSec } from './MLService.js';
+import { applyAndEmitSemaforo, computeSemaforoForPedido } from './SemaforoService.js';
+import RealtimeService from '../realtime/RealtimeService.js';
+import { parseDescripcion, normalizeSkills, skillOverlap } from './ml/features.js';
 
 type Candidate = {
   trabajadorId: number;

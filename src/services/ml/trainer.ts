@@ -1,6 +1,6 @@
-import { prisma } from '../../prisma/client';
-import { buildBaseAndExtraFeatures } from './features';
-import { saveModel, saveModelToDB } from './storage';
+import { prisma } from '../../prisma/client.js';
+import { buildBaseAndExtraFeatures } from './features.js';
+import { saveModel, saveModelToDB } from './storage.js';
 
 function transpose(A: number[][]): number[][] {
   return A[0].map((_, i) => A.map(row => row[i]));

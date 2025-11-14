@@ -1,8 +1,8 @@
 // src/services/ml/train-tensor.ts
 import type * as TF from '@tensorflow/tfjs';
-import { prisma } from '../../prisma/client';
-import { buildBaseAndExtraFeatures } from './features';
-import { saveModel, saveModelToDB, type LinearModel } from './storage';
+import { prisma } from '../../prisma/client.js';
+import { buildBaseAndExtraFeatures } from './features.js';
+import { saveModel, saveModelToDB, type LinearModel } from './storage.js';
 
 type TFModule = typeof TF;
 

@@ -1,10 +1,10 @@
 ﻿import type { Request, Response, NextFunction } from 'express';
-import { prisma } from '../prisma/client';
-import { success, fail } from '../utils/response';
-import { suggestTopTrabajador } from '../services/HeuristicsService';
-import { predictTiempoSec, storePrediccion } from '../services/MLService';
-import { logger } from '../utils/logger';
-import RealtimeService from '../realtime/RealtimeService';
+import { prisma } from '../prisma/client.js';
+import { success, fail } from '../utils/response.js';
+import { suggestTopTrabajador } from '../services/HeuristicsService.js';
+import { predictTiempoSec, storePrediccion } from '../services/MLService.js';
+import { logger } from '../utils/logger.js';
+import RealtimeService from '../realtime/RealtimeService.js';
 
 // Asignación simple: actualizar Pedido con responsable
 export const asignar = async (req: Request, res: Response, next: NextFunction) => {

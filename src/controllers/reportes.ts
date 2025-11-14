@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction  } from "express";
-import { prisma } from '../prisma/client';
-import { success } from '../utils/response';
+import { prisma } from '../prisma/client.js';
+import { success } from '../utils/response.js';
 
 export const semanal = async (req: Request, res: Response, next: NextFunction) => {
   try {

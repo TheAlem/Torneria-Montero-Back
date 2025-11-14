@@ -1,6 +1,6 @@
 ﻿import type { Request, Response, NextFunction } from 'express';
-import { prisma } from '../prisma/client';
-import { success, fail } from '../utils/response';
+import { prisma } from '../prisma/client.js';
+import { success, fail } from '../utils/response.js';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';

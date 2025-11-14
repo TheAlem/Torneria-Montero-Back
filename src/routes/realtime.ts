@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { authenticate } from '../middlewares/authMiddleware';
-import { prisma } from '../prisma/client';
-import RealtimeService from '../realtime/RealtimeService';
+import { authenticate } from '../middlewares/authMiddleware.js';
+import { prisma } from '../prisma/client.js';
+import RealtimeService from '../realtime/RealtimeService.js';
 
 const router = Router();
 

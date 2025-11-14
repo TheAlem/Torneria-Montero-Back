@@ -1,5 +1,5 @@
-﻿import { prisma } from '../prisma/client';
-import { predictTiempoSec } from './MLService';
+﻿import { prisma } from '../prisma/client.js';
+import { predictTiempoSec } from './MLService.js';
 
 type RankedTrabajador = { id: number; score: number };
 

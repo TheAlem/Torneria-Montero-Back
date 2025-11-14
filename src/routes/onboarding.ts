@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import * as ctrl from '../controllers/onboarding';
-import { authenticate } from '../middlewares/authMiddleware';
+import * as ctrl from '../controllers/onboarding.js';
+import { authenticate } from '../middlewares/authMiddleware.js';
 
 const router = Router();
 

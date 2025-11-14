@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { listarKanban, cambiarEstado, evaluarSemaforo } from '../controllers/kanban';
-import { authenticate, requireRole } from '../middlewares/authMiddleware';
+import { listarKanban, cambiarEstado, evaluarSemaforo } from '../controllers/kanban.js';
+import { authenticate, requireRole } from '../middlewares/authMiddleware.js';
 
 const router = Router();
 

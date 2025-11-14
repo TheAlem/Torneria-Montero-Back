@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
-import { prisma } from '../prisma/client';
-import { success, fail, fieldsValidation } from '../utils/response';
+import { prisma } from '../prisma/client.js';
+import { success, fail, fieldsValidation } from '../utils/response.js';
 
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
   try {

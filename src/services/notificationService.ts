@@ -1,4 +1,4 @@
-import { logger } from '../utils/logger';
+import { logger } from '../utils/logger.js';
 
 export class NotificationService {
   static async sendAppAccess(email: string | null | undefined, phone: string | null | undefined, code: string) {

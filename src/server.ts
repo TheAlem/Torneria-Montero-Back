@@ -1,10 +1,11 @@
-import { logger } from './utils/logger';
+import { logger } from './utils/logger.js';
 import dotenv from 'dotenv';
 import os from 'os';
 dotenv.config();
 
 // When running via ts-node/esm import the compiled JS path
-import app from './app';
+import app from './app.js';
+import RealtimeService from './realtime/RealtimeService.js';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const HOST = '0.0.0.0';
@@ -27,7 +28,7 @@ app.listen(PORT, HOST, () => {
   const enabled = String(process.env.KANBAN_MONITOR_ENABLED || 'false').toLowerCase() === 'true';
   const everySec = Number(process.env.KANBAN_MONITOR_INTERVAL_SEC || 300);
   if (enabled) {
-    import('./services/KanbanMonitorService').then(({ evaluateAndNotify }) => {
+    import('./services/KanbanMonitorService.js').then(({ evaluateAndNotify }) => {
       setInterval(async () => {
         try { await evaluateAndNotify(); } catch (e) { logger.error('Kanban monitor error', e as any); }
       }, Math.max(60, everySec) * 1000);
@@ -48,11 +49,10 @@ app.listen(PORT, HOST, () => {
       const ms = Math.max(1000, next.getTime() - now.getTime());
       setTimeout(async () => {
         try {
-          const { trainLinearDurationModelTF } = await import('./services/ml/train-tensor');
+          const { trainLinearDurationModelTF } = await import('./services/ml/train-tensor.js');
           const result = await trainLinearDurationModelTF(limit);
           logger.info({ msg: '[ML] Modelo entrenado', count: result.count, version: result.model.version });
           try {
-            const { default: RealtimeService } = await import('./realtime/RealtimeService');
             RealtimeService.emitWebAlert('ML_TRAINED', 'Modelo ML entrenado', {});
           } catch {}
         } catch (e) {

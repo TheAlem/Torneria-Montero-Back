@@ -1,10 +1,10 @@
-import { prisma } from '../prisma/client';
-import NotificationService from './notificationService';
-import { predictTiempoSec } from './MLService';
-import { logger } from '../utils/logger';
-import RealtimeService from '../realtime/RealtimeService';
-import { applyAndEmitSemaforo } from './SemaforoService';
-import { autoAssignIfEnabled, maybeReassignIfEnabled } from './AssignmentService';
+import { prisma } from '../prisma/client.js';
+import NotificationService from './notificationService.js';
+import { predictTiempoSec } from './MLService.js';
+import { logger } from '../utils/logger.js';
+import RealtimeService from '../realtime/RealtimeService.js';
+import { applyAndEmitSemaforo } from './SemaforoService.js';
+import { autoAssignIfEnabled, maybeReassignIfEnabled } from './AssignmentService.js';
 
 type Estado = 'PENDIENTE'|'ASIGNADO'|'EN_PROGRESO'|'QA'|'ENTREGADO';
 

@@ -1,22 +1,22 @@
 import express from 'express';
 import cors from 'cors';
-import errorHandler from './middlewares/errorHandler';
+import errorHandler from './middlewares/errorHandler.js';
 import swaggerUi from 'swagger-ui-express';
 import swaggerJSDoc from 'swagger-jsdoc';
 import * as fs from 'fs';
 import path from 'path';
 
-import clientesRoutes from './routes/clientes';
-import pedidosRoutes from './routes/pedidos';
-import trabajadoresRoutes from './routes/trabajadores';
-import asignacionesRoutes from './routes/asignaciones';
-import reportesRoutes from './routes/reportes';
-import authRoutes from './routes/auth';
-import kanbanRoutes from './routes/kanban';
-import mlRoutes from './routes/ml';
-import onboardingRoutes from './routes/onboarding';
-import realtimeRoutes from './routes/realtime';
-import { success } from './utils/response';
+import clientesRoutes from './routes/clientes.js';
+import pedidosRoutes from './routes/pedidos.js';
+import trabajadoresRoutes from './routes/trabajadores.js';
+import asignacionesRoutes from './routes/asignaciones.js';
+import reportesRoutes from './routes/reportes.js';
+import authRoutes from './routes/auth.js';
+import kanbanRoutes from './routes/kanban.js';
+import mlRoutes from './routes/ml.js';
+import onboardingRoutes from './routes/onboarding.js';
+import realtimeRoutes from './routes/realtime.js';
+import { success } from './utils/response.js';
 
 const app = express();
 

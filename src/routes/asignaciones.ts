@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import * as ctrl from '../controllers/asignaciones';
-import { authenticate, requireRole } from '../middlewares/authMiddleware';
-import { suggestCandidates, autoAssignForced } from '../services/AssignmentService';
-import { prisma } from '../prisma/client';
-import { success as ok, fail } from '../utils/response';
+import * as ctrl from '../controllers/asignaciones.js';
+import { authenticate, requireRole } from '../middlewares/authMiddleware.js';
+import { suggestCandidates, autoAssignForced } from '../services/AssignmentService.js';
+import { prisma } from '../prisma/client.js';
+import { success as ok, fail } from '../utils/response.js';
 
 const router = Router();
 

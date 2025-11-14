@@ -1,6 +1,6 @@
 import type { Response } from 'express';
-import { logger } from '../utils/logger';
-import { prisma } from '../prisma/client';
+import { logger } from '../utils/logger.js';
+import { prisma } from '../prisma/client.js';
 
 type Stream = Response;
 

@@ -1,5 +1,5 @@
-import { prisma } from '../prisma/client';
-import { CreatePedidoBody } from '../validators/pedidoValidator';
+import { prisma } from '../prisma/client.js';
+import { CreatePedidoBody } from '../validators/pedidoValidator.js';
 
 async function resolveClienteId(payload: CreatePedidoBody): Promise<number> {
   if (payload.cliente_id) return Number(payload.cliente_id);

@@ -1,6 +1,6 @@
-import { prisma } from '../prisma/client';
-import { predictWithLinearModel, predictWithLatestModel } from './ml/predictor';
-import { getMinSeconds, getMaxSeconds } from './ml/storage';
+import { prisma } from '../prisma/client.js';
+import { predictWithLinearModel, predictWithLatestModel } from './ml/predictor.js';
+import { getMinSeconds, getMaxSeconds } from './ml/storage.js';
 
 export async function predictTiempoSec(pedidoId: number, trabajadorId: number): Promise<number> {
   const MIN_SEC = getMinSeconds();
