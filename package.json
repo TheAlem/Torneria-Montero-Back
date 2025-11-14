@@ -15,7 +15,6 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "module",
   "devDependencies": {
     "@prisma/client": "^6.18.0",
     "@types/bcryptjs": "^2.4.6",
