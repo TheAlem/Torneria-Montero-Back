@@ -1,14 +1,29 @@
 import { logger } from './utils/logger';
 import dotenv from 'dotenv';
+import os from 'os';
 dotenv.config();
 
 // When running via ts-node/esm import the compiled JS path
 import app from './app';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const HOST = '0.0.0.0';
 
-app.listen(PORT, () => {
-  logger.info(`Server listening on http://localhost:${PORT}`);  
+const getNetworkAddress = () => {
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]!) {
+      if (net.family === 'IPv4' && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
+app.listen(PORT, HOST, () => {
+  logger.info(`Server listening on http://localhost:${PORT}`);
+  logger.info(`On your network: http://${getNetworkAddress()}:${PORT}`);
   const enabled = String(process.env.KANBAN_MONITOR_ENABLED || 'false').toLowerCase() === 'true';
   const everySec = Number(process.env.KANBAN_MONITOR_INTERVAL_SEC || 300);
   if (enabled) {
@@ -33,8 +48,8 @@ app.listen(PORT, () => {
       const ms = Math.max(1000, next.getTime() - now.getTime());
       setTimeout(async () => {
         try {
-          const { trainLinearDurationModel } = await import('./services/ml/trainer');
-          const result = await trainLinearDurationModel(limit);
+          const { trainLinearDurationModelTF } = await import('./services/ml/train-tensor');
+          const result = await trainLinearDurationModelTF(limit);
           logger.info({ msg: '[ML] Modelo entrenado', count: result.count, version: result.model.version });
           try {
             const { default: RealtimeService } = await import('./realtime/RealtimeService');

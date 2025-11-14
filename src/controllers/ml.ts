@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import fs from 'fs';
-import { trainLinearDurationModel } from '../services/ml/trainer';
+import { trainLinearDurationModelTF } from '../services/ml/train-tensor';
 import { success } from '../utils/response';
 
 export const train = async (req: Request, res: Response, next: NextFunction) => {
@@ -8,7 +8,7 @@ export const train = async (req: Request, res: Response, next: NextFunction) => 
     const { limit } = (req.body || {}) as { limit?: number };
     const lim = Number(limit) || Number(process.env.ML_TRAIN_LIMIT) || 1000;
 
-    const result = await trainLinearDurationModel(lim);
+    const result = await trainLinearDurationModelTF(lim);
     return success(
       res,
       {
