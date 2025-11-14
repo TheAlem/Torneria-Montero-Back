@@ -2,7 +2,10 @@
   "compilerOptions": {
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "outDir": "dist",
+    "rootDir": "src",
     "target": "ES2022",
+    "types": [],
     "lib": ["ES2022"],
     "ignoreDeprecations": "6.0",
     "baseUrl": "./src",
@@ -17,5 +20,5 @@
     "isolatedModules": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*", "prisma/seed.ts"]
+  "include": ["src/**/*"]
 }

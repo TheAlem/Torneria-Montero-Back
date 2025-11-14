@@ -2,10 +2,10 @@
   "name": "torneria-montero-back",
   "version": "1.0.0",
   "description": "",
-  "main": "src/server.ts",
+  "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon --watch src -e ts,js,json --exec \"tsx src/server.ts\"",
-    "start": "node src/server.ts",
+    "start": "node dist/server.js",
     "build": "tsc",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
