@@ -8,3 +8,4 @@ node_modules
 .venv312/
 models/*.onnx
 models/meta.json
+dist/
