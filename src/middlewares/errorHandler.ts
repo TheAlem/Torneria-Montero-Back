@@ -5,7 +5,13 @@ import { fail } from '../utils/response';
 export default function errorHandler(err: any, req: Request, res: Response, _next: NextFunction) {
   // Log legible en servidor
   try {
-    logger.error({ message: 'API Error', error: err });
+    logger.error('API Error', {
+      path: req.path,
+      method: req.method,
+      message: err?.message,
+      code: err?.code,
+      stack: err?.stack,
+    });
   } catch {
     // noop
   }
