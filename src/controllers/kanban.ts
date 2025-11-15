@@ -94,9 +94,9 @@ export const cambiarEstado = async (req: Request, res: Response, next: NextFunct
  */
 export const evaluarSemaforo = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // By default, manual evaluation DOES NOT auto reassign. ?autoReassign=true to allow.
-    const autoReassign = String((req.query?.autoReassign as string) || 'false').toLowerCase() === 'true';
-    const result = await evaluateAndNotify({ suggestOnly: !autoReassign });
+    // By default evaluamos con auto-reasignación activa; se puede forzar modo sugerencia con autoReassign=false.
+    const autoReassign = String((req.query?.autoReassign as string) || 'true').toLowerCase() !== 'false';
+    const result = await evaluateAndNotify({ autoReassign });
     const checked = Number((result as any)?.checked ?? 0);
     const affectedArr = Array.isArray((result as any)?.affected) ? (result as any).affected : [];
     const affectedCount = affectedArr.length;

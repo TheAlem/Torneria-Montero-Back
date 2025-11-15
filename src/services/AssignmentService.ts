@@ -2,6 +2,7 @@ import { prisma } from '../prisma/client.js';
 import { predictTiempoSec } from './MLService.js';
 import { applyAndEmitSemaforo, computeSemaforoForPedido } from './SemaforoService.js';
 import RealtimeService from '../realtime/RealtimeService.js';
+import { logger } from '../utils/logger.js';
 import { parseDescripcion, normalizeSkills, skillOverlap } from './ml/features.js';
 
 type Candidate = {
@@ -129,26 +130,86 @@ export async function autoAssignForced(pedidoId: number): Promise<boolean> {
   return true;
 }
 
-export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'AMARILLO'|'ROJO') {
+export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'AMARILLO'|'ROJO', options?: { minScoreDelta?: number }) {
   if (color !== 'ROJO') return false;
-  if (String(process.env.AUTO_REASSIGN_ENABLED ?? 'false') !== 'true') {
-    const candidates = await suggestCandidates(pedidoId);
-    try { RealtimeService.emitToOperators('assignment:suggest', { pedidoId, candidates, ts: Date.now() }); } catch {}
-    return false;
-  }
   const candidates = await suggestCandidates(pedidoId);
-  const choice = candidates.find(c => !c.saturado);
-  if (!choice) {
-    try { RealtimeService.emitToOperators('assignment:suggest', { pedidoId, candidates, ts: Date.now() }); } catch {}
+  if (!candidates.length) {
+    try { RealtimeService.emitToOperators('assignment:auto-keep', { pedidoId, reason: 'no_candidates', ts: Date.now() }); } catch {}
     return false;
   }
-  const current = await prisma.pedidos.findUnique({ where: { id: pedidoId }, select: { responsable_id: true } });
-  if (current?.responsable_id === choice.trabajadorId) return false;
 
-  await prisma.asignaciones.create({ data: { pedido_id: pedidoId, trabajador_id: choice.trabajadorId, origen: 'MANUAL', comentarios: 'AUTO_REASSIGN_ROJO' } }).catch(() => {});
-  await prisma.pedidos.update({ where: { id: pedidoId }, data: { responsable_id: choice.trabajadorId } });
+  const pedido = await prisma.pedidos.findUnique({
+    where: { id: pedidoId },
+    include: {
+      responsable: { include: { usuario: { select: { id: true, nombre: true } } } },
+      cliente: { select: { id: true, nombre: true } }
+    }
+  });
+
+  const currentId = pedido?.responsable_id ?? null;
+  const best = candidates.find(c => !c.saturado) ?? candidates[0];
+  const currentCandidate = currentId ? candidates.find(c => c.trabajadorId === currentId) : undefined;
+  if (!best) {
+    try { RealtimeService.emitToOperators('assignment:auto-keep', { pedidoId, reason: 'no_best', ts: Date.now(), currentId }); } catch {}
+    return false;
+  }
+
+  const minDelta = typeof options?.minScoreDelta === 'number'
+    ? options!.minScoreDelta
+    : Number(process.env.AUTO_REASSIGN_MIN_DELTA ?? 0.1);
+  const deltaScore = currentCandidate ? best.score - currentCandidate.score : best.score;
+
+  if (!currentId || currentId === best.trabajadorId || deltaScore < minDelta) {
+    try {
+      RealtimeService.emitToOperators('assignment:auto-keep', {
+        pedidoId,
+        reason: currentId === best.trabajadorId ? 'already_best' : 'delta_low',
+        deltaScore,
+        currentId,
+        best,
+        ts: Date.now()
+      });
+    } catch {}
+    return false;
+  }
+
+  await prisma.asignaciones.create({
+    data: {
+      pedido_id: pedidoId,
+      trabajador_id: best.trabajadorId,
+      origen: 'MANUAL',
+      comentarios: 'AUTO_REASSIGN_DELAY'
+    }
+  }).catch(() => {});
+
+  await prisma.pedidos.update({
+    where: { id: pedidoId },
+    data: { responsable_id: best.trabajadorId }
+  });
+
   await applyAndEmitSemaforo(pedidoId);
-  try { RealtimeService.emitToOperators('assignment:changed', { pedidoId, trabajadorId: choice.trabajadorId, ts: Date.now() }); } catch {}
+
+  const payload = {
+    pedidoId,
+    from: currentId,
+    to: best.trabajadorId,
+    deltaScore,
+    ts: Date.now(),
+    best
+  };
+
+  logger.info({ msg: '[Assignment] Auto reasignación por retraso', ...payload });
+  try {
+    RealtimeService.emitToOperators('assignment:auto-reassign', payload);
+    RealtimeService.emitToOperators('assignment:changed', payload);
+  } catch {}
+  try {
+    RealtimeService.emitWebAlert(
+      'ASIGNACION',
+      `Pedido #${pedidoId} reasignado automáticamente por retraso`,
+      { pedidoId, from: currentId, to: best.trabajadorId, deltaScore }
+    );
+  } catch {}
   return true;
 }
 

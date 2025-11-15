@@ -26,13 +26,31 @@ export const listar = async (req: Request, res: Response, next: NextFunction) =>
 export const listarDelCliente = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { page = 1, limit = 10 } = req.query as any;
-    const user = (req as any).user as { id: number } | undefined;
+    const user = (req as any).user as { id: number; role?: string } | undefined;
     if (!user) return fail(res, 'AUTH_ERROR', 'No autenticado', 401);
     const profile = await prisma.usuarios.findUnique({ where: { id: Number(user.id) }, include: { cliente: true } });
-    if (!profile?.cliente?.id) {
+    if (!profile) return fail(res, 'AUTH_ERROR', 'Usuario no encontrado', 401);
+
+    let clienteId = profile.cliente?.id ?? null;
+    if (!clienteId) {
+      const orConditions: any[] = [{ usuario_id: profile.id }];
+      if (profile.email) orConditions.push({ email: profile.email });
+      const fallback = await prisma.clientes.findFirst({
+        where: { OR: orConditions }
+      });
+      if (fallback) {
+        clienteId = fallback.id;
+        if (!fallback.usuario_id) {
+          await prisma.clientes.update({ where: { id: fallback.id }, data: { usuario_id: profile.id } }).catch(() => {});
+        }
+      }
+    }
+
+    if (!clienteId) {
       return fail(res, 'AUTH_ERROR', 'Solo clientes pueden acceder a sus pedidos', 403);
     }
-    const where = { eliminado: false, cliente_id: profile.cliente.id };
+
+    const where = { eliminado: false, cliente_id: clienteId };
     const pedidos = await prisma.pedidos.findMany({
       where,
       include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } } },

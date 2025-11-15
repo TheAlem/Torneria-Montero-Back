@@ -5,13 +5,14 @@ import { logger } from '../utils/logger.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import { applyAndEmitSemaforo } from './SemaforoService.js';
 import { suggestCandidates, maybeReassignIfEnabled } from './AssignmentService.js';
-export async function evaluateAndNotify(options?: { suggestOnly?: boolean }) {
+export async function evaluateAndNotify(options?: { autoReassign?: boolean }) {
   const now = new Date();
   const activos = await prisma.pedidos.findMany({
     where: { eliminado: false, estado: { in: ['PENDIENTE','ASIGNADO','EN_PROGRESO','QA'] } },
     include: { cliente: true, responsable: true }
   });
   const affected: any[] = [];
+  const allowAuto = options?.autoReassign !== false;
   for (const p of activos) {
     // Nueva lógica de semáforo real (ratio por trabajador y fecha/hora):
     try {
@@ -22,12 +23,12 @@ export async function evaluateAndNotify(options?: { suggestOnly?: boolean }) {
       // Sugerencias / reasignación en riesgo
       const color = (res as any)?.color;
       if (color === 'ROJO') {
-        if (!options?.suggestOnly) {
+        if (allowAuto) {
           await maybeReassignIfEnabled(p.id, color);
         } else {
           try {
             const candidates = await suggestCandidates(p.id);
-            RealtimeService.emitToOperators('assignment:suggest', { pedidoId: p.id, candidates, ts: Date.now() });
+            RealtimeService.emitToOperators('assignment:suggest', { pedidoId: p.id, candidates, ts: Date.now(), mode: 'manual' });
           } catch {}
         }
       } else if (color === 'AMARILLO') {
