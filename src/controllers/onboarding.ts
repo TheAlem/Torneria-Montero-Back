@@ -14,6 +14,21 @@ function ttlMinutes() {
   return Number.isFinite(n) && n > 0 ? n : 30;
 }
 
+function validatePassword(raw: unknown) {
+  const minLength = Math.max(6, Number(process.env.ONBOARDING_PASSWORD_MIN_LENGTH || 6));
+  const value = typeof raw === 'string' ? raw.trim() : String(raw ?? '').trim();
+  if (!value) {
+    return { ok: false, message: 'La contraseña es requerida.' };
+  }
+  if (value.length < minLength) {
+    return { ok: false, message: `La contraseña debe tener al menos ${minLength} caracteres.` };
+  }
+  if (!/[a-zA-Z]/.test(value) || !/[0-9]/.test(value)) {
+    return { ok: false, message: 'La contraseña debe incluir letras y números.' };
+  }
+  return { ok: true, value };
+}
+
 export const crearQR = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const clienteId = Number(req.params.id);
@@ -50,7 +65,7 @@ export const validar = async (req: Request, res: Response, next: NextFunction) =
   try {
     const token = String(req.params.token);
     const entry = await getValidToken(token);
-    if (!entry) return fail(res, 'AUTH_ERROR', 'Token invÃ¡lido o expirado', 401);
+    if (!entry) return fail(res, 'AUTH_ERROR', 'Token inválido o expirado', 401);
 
     const { cliente } = entry;
     return success(res, {
@@ -67,21 +82,24 @@ export const completar = async (req: Request, res: Response, next: NextFunction)
     const JWT_SECRET = process.env.JWT_SECRET as string;
     const token = String(req.params.token);
     const { password } = req.body as any;
-    if (!password || String(password).length < 6) return fail(res, 'VALIDATION_ERROR', 'ContraseÃ±a invÃ¡lida', 400);
+    const validation = validatePassword(password);
+    if (!validation.ok) {
+      return fail(res, 'VALIDATION_ERROR', validation.message, 400);
+    }
 
     const entry = await getValidToken(token);
-    if (!entry) return fail(res, 'AUTH_ERROR', 'Token invÃ¡lido o expirado', 401);
+    if (!entry) return fail(res, 'AUTH_ERROR', 'Token inválido o expirado', 401);
 
     const cliente = await prisma.clientes.findUnique({ where: { id: entry.cliente_id } });
     if (!cliente) return fail(res, 'NOT_FOUND', 'Cliente no encontrado', 404);
-    if (cliente.usuario_id) return fail(res, 'CONFLICT', 'Cliente ya estÃ¡ vinculado a un usuario', 409);
+    if (cliente.usuario_id) return fail(res, 'CONFLICT', 'Cliente ya está vinculado a un usuario', 409);
 
-    const hash = await bcrypt.hash(String(password), 10);
-    // Email requerido por esquema: usar email real si existe o uno sintÃ©tico Ãºnico
+    const hash = await bcrypt.hash(validation.value, 10);
+    // Email requerido por esquema: usar email real si existe o uno sint?tico ?nico
     const syntheticEmail = `cliente-${cliente.id}@qr.local`;
     const email = cliente.email || syntheticEmail;
 
-    // Evitar colisiÃ³n si existiera un usuario con ese email
+    // Evitar colisi?n si existiera un usuario con ese email
     const existing = await prisma.usuarios.findUnique({ where: { email } }).catch(() => null);
     const finalEmail = existing ? `cliente-${cliente.id}-${Date.now()}@qr.local` : email;
 
