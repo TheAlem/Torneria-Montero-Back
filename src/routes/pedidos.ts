@@ -25,6 +25,25 @@ router.get('/', authenticate, ctrl.listar);
 
 /**
  * @openapi
+ * /api/pedidos/clientes:
+ *   get:
+ *     tags:
+ *       - Pedidos
+ *     summary: Listar pedidos del cliente autenticado (app)
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       '200':
+ *         description: Lista de pedidos del cliente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnifiedSuccess'
+ */
+router.get('/clientes', authenticate, ctrl.listarDelCliente);
+
+/**
+ * @openapi
  * /api/pedidos/{id}:
  *   get:
  *     tags:

@@ -23,6 +23,28 @@ export const listar = async (req: Request, res: Response, next: NextFunction) =>
   } catch (err) { next(err); }
 };
 
+export const listarDelCliente = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { page = 1, limit = 10 } = req.query as any;
+    const user = (req as any).user as { id: number } | undefined;
+    if (!user) return fail(res, 'AUTH_ERROR', 'No autenticado', 401);
+    const profile = await prisma.usuarios.findUnique({ where: { id: Number(user.id) }, include: { cliente: true } });
+    if (!profile?.cliente?.id) {
+      return fail(res, 'AUTH_ERROR', 'Solo clientes pueden acceder a sus pedidos', 403);
+    }
+    const where = { eliminado: false, cliente_id: profile.cliente.id };
+    const pedidos = await prisma.pedidos.findMany({
+      where,
+      include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } } },
+      orderBy: { fecha_actualizacion: 'desc' },
+      skip: (Number(page) - 1) * Number(limit),
+      take: Number(limit),
+    });
+    const total = await prisma.pedidos.count({ where });
+    return success(res, { pedidos, total, page: Number(page), limit: Number(limit) });
+  } catch (err) { next(err); }
+};
+
 export const getById = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = Number(req.params.id);
