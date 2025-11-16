@@ -5,6 +5,7 @@ import { logger } from '../utils/logger.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import { applyAndEmitSemaforo } from './SemaforoService.js';
 import { suggestCandidates, maybeReassignIfEnabled } from './AssignmentService.js';
+import * as ClientNotificationService from './ClientNotificationService.js';
 export async function evaluateAndNotify(options?: { autoReassign?: boolean }) {
   const now = new Date();
   const activos = await prisma.pedidos.findMany({
@@ -47,35 +48,21 @@ export async function evaluateAndNotify(options?: { autoReassign?: boolean }) {
     const responsableId = p.responsable_id ?? 0;
     const estimSec = await predictTiempoSec(p.id, responsableId);
 
-    // si la estimación supera el tiempo restante, riesgo de retraso
+    // si la estimacion supera el tiempo restante, riesgo de retraso
     if (estimSec > remainingSec) {
-      // actualizar semáforo a ROJO
       await prisma.pedidos.update({ where: { id: p.id }, data: { semaforo: 'ROJO' } });
-
-      // calcular nueva fecha sugerida
       const nuevaFecha = new Date(now.getTime() + estimSec * 1000);
 
-      // crear notificación al cliente
-      try {
-        await prisma.notificaciones.create({
-          data: {
-            pedido_id: p.id,
-            cliente_id: p.cliente_id,
-            mensaje: `Retraso estimado. Nueva fecha sugerida: ${nuevaFecha.toISOString()}`,
-            tipo: 'ALERTA',
-          }
-        });
-      } catch {}
-
-      // Emitir en tiempo real (mejor esfuerzo)
-      try {
-        const notif = await prisma.notificaciones.findFirst({ where: { pedido_id: p.id, cliente_id: p.cliente_id }, orderBy: { id: 'desc' } });
-        if (notif) {
-          RealtimeService.emitToClient(p.cliente_id, 'notification:new', notif);
-          RealtimeService.emitToOperators('kanban:semaforo-changed', { pedidoId: p.id, semaforo: 'ROJO', suggestedDue: nuevaFecha.toISOString() });
-          RealtimeService.emitWebAlert('RETRASO', `Pedido #${p.id} en riesgo (ROJO)`, { pedidoId: p.id, suggestedDue: nuevaFecha.toISOString() });
-        }
-      } catch {}
+      await ClientNotificationService.createNotification({
+        pedidoId: p.id,
+        clienteId: p.cliente_id,
+        mensaje: `Retraso estimado. Nueva fecha sugerida: ${nuevaFecha.toISOString()}`,
+        tipo: 'ALERTA',
+        title: 'Retraso detectado',
+        data: { suggestedDue: nuevaFecha.toISOString() },
+      });
+      RealtimeService.emitToOperators('kanban:semaforo-changed', { pedidoId: p.id, semaforo: 'ROJO', suggestedDue: nuevaFecha.toISOString() });
+      RealtimeService.emitWebAlert('RETRASO', `Pedido #${p.id} en riesgo (ROJO)`, { pedidoId: p.id, suggestedDue: nuevaFecha.toISOString() });
 
       await NotificationService.sendDelayNotice({
         clienteEmail: p.cliente?.email ?? null,
@@ -106,11 +93,15 @@ export async function evaluateAndNotify(options?: { autoReassign?: boolean }) {
               where: { pedido_id: p.id, tipo: 'INFO', mensaje: { contains: 'Entrega en' }, fecha_creacion: { gte: sixHoursAgo } },
               orderBy: { id: 'desc' }
             });
-            const upcoming = lastUpcoming ?? await prisma.notificaciones.create({
-              data: { pedido_id: p.id, cliente_id: p.cliente_id, mensaje: msg, tipo: 'INFO' }
-            }).catch(() => null);
-            if (upcoming) {
-              RealtimeService.emitToClient(p.cliente_id, 'notification:new', upcoming);
+            if (!lastUpcoming) {
+              await ClientNotificationService.createNotification({
+                pedidoId: p.id,
+                clienteId: p.cliente_id,
+                mensaje: msg,
+                tipo: 'INFO',
+                title: 'Proxima entrega',
+                data: { etaHours: String(hours) },
+              });
             }
             RealtimeService.emitWebAlert('PROXIMA_ENTREGA', `Pedido #${p.id} - ${msg}`, { pedidoId: p.id, inHours: hours });
           } catch {}
@@ -120,3 +111,4 @@ export async function evaluateAndNotify(options?: { autoReassign?: boolean }) {
   }
   return { checked: activos.length, affected };
 }
+

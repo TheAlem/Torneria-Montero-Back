@@ -9,3 +9,4 @@ node_modules
 models/*.onnx
 models/meta.json
 dist/
+service-account.json

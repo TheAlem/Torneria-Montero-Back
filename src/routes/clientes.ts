@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as ctrl from '../controllers/clientes.js';
+import * as notificationsCtrl from '../controllers/notificaciones.js';
 import { authenticate, requireRole } from '../middlewares/authMiddleware.js';
 
 const router = Router();
@@ -85,6 +86,110 @@ router.get('/buscar', authenticate, ctrl.buscar);
  *               $ref: '#/components/schemas/FieldsValidation'
  */
 router.post('/', ctrl.crear);
+
+/**
+ * @openapi
+ * /api/clientes/notificaciones:
+ *   get:
+ *     tags:
+ *       - Clientes
+ *     summary: Listar notificaciones del cliente autenticado
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20 }
+ *       - in: query
+ *         name: tipo
+ *         schema: { $ref: '#/components/schemas/TipoNotificacion' }
+ *       - in: query
+ *         name: onlyUnread
+ *         schema: { type: boolean }
+ *     responses:
+ *       '200':
+ *         description: Notificaciones del cliente autenticado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnifiedSuccess'
+ */
+router.get('/notificaciones', authenticate, notificationsCtrl.listarPropias);
+
+/**
+ * @openapi
+ * /api/clientes/notificaciones/token:
+ *   post:
+ *     tags:
+ *       - Clientes
+ *     summary: Registrar token de notificaciones push (FCM)
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               token: { type: string }
+ *               platform: { type: string }
+ *     responses:
+ *       '200':
+ *         description: Token actualizado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnifiedSuccess'
+ */
+router.post('/notificaciones/token', authenticate, notificationsCtrl.registrarPushToken);
+
+/**
+ * @openapi
+ * /api/clientes/notificaciones/leidas:
+ *   patch:
+ *     tags:
+ *       - Clientes
+ *     summary: Marcar todas las notificaciones como leídas
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       '200':
+ *         description: Total actualizado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnifiedSuccess'
+ */
+router.patch('/notificaciones/leidas', authenticate, notificationsCtrl.marcarTodasLeidas);
+
+/**
+ * @openapi
+ * /api/clientes/notificaciones/{id}/leida:
+ *   patch:
+ *     tags:
+ *       - Clientes
+ *     summary: Marcar notificación como leída
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       '200':
+ *         description: Notificación actualizada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnifiedSuccess'
+ */
+router.patch('/notificaciones/:id/leida', authenticate, notificationsCtrl.marcarLeida);
 
 /**
  * @openapi

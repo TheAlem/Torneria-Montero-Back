@@ -5,6 +5,8 @@ import { success, fail, fieldsValidation } from '../utils/response.js';
 import { UpdatePedidoSchema } from '../validators/pedidoValidator.js';
 import { transitionEstado } from '../services/PedidoWorkflow.js';
 import RealtimeService from '../realtime/RealtimeService.js';
+import { resolveClienteIdentity } from '../services/ClienteIdentityService.js';
+import * as ClientNotificationService from '../services/ClientNotificationService.js';
 
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -28,23 +30,8 @@ export const listarDelCliente = async (req: Request, res: Response, next: NextFu
     const { page = 1, limit = 10 } = req.query as any;
     const user = (req as any).user as { id: number; role?: string } | undefined;
     if (!user) return fail(res, 'AUTH_ERROR', 'No autenticado', 401);
-    const profile = await prisma.usuarios.findUnique({ where: { id: Number(user.id) }, include: { cliente: true } });
+    const { profile, clienteId } = await resolveClienteIdentity(Number(user.id));
     if (!profile) return fail(res, 'AUTH_ERROR', 'Usuario no encontrado', 401);
-
-    let clienteId = profile.cliente?.id ?? null;
-    if (!clienteId) {
-      const orConditions: any[] = [{ usuario_id: profile.id }];
-      if (profile.email) orConditions.push({ email: profile.email });
-      const fallback = await prisma.clientes.findFirst({
-        where: { OR: orConditions }
-      });
-      if (fallback) {
-        clienteId = fallback.id;
-        if (!fallback.usuario_id) {
-          await prisma.clientes.update({ where: { id: fallback.id }, data: { usuario_id: profile.id } }).catch(() => {});
-        }
-      }
-    }
 
     if (!clienteId) {
       return fail(res, 'AUTH_ERROR', 'Solo clientes pueden acceder a sus pedidos', 403);
@@ -88,6 +75,19 @@ export const crear = async (req: Request, res: Response, next: NextFunction) => 
         { pedidoId: created.id, prioridad: pedido?.prioridad, cliente: pedido?.cliente?.nombre }
       );
     } catch {}
+    // Notificación al cliente sobre la creación del trabajo
+    try {
+      const clienteId = pedido?.cliente?.id ?? created.cliente_id;
+      if (clienteId) {
+        await ClientNotificationService.createNotification({
+          pedidoId: created.id,
+          clienteId,
+          mensaje: 'Tu pedido fue registrado y estamos comenzando a planificarlo.',
+          tipo: 'INFO',
+          title: 'Pedido creado',
+        });
+      }
+    } catch {}
     return success(res, pedido, 201);
   } catch (err: any) {
     if (err?.name === 'ZodError') return fieldsValidation(res, err.errors ?? err);
@@ -116,6 +116,26 @@ export const actualizar = async (req: Request, res: Response, next: NextFunction
 
     await prisma.pedidos.update({ where: { id }, data });
     const pedido = await prisma.pedidos.findUnique({ where: { id }, include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } } } });
+    try {
+      const clienteId = pedido?.cliente?.id;
+      if (clienteId) {
+        const mensajes: string[] = [];
+        if (typeof body.estado !== 'undefined') mensajes.push(`El estado cambió a ${body.estado}.`);
+        if (typeof body.fecha_estimada_fin !== 'undefined') mensajes.push('Actualizamos la fecha estimada de entrega.');
+        if (typeof body.responsable_id !== 'undefined') mensajes.push('Asignamos un nuevo responsable para tu trabajo.');
+        if (typeof body.descripcion !== 'undefined') mensajes.push('Ajustamos la descripción de tu pedido.');
+        if (typeof body.notas !== 'undefined') mensajes.push('Se añadieron nuevas notas a tu pedido.');
+        if (typeof body.adjuntos !== 'undefined') mensajes.push('Actualizamos los archivos asociados a tu pedido.');
+        const message = mensajes.length ? mensajes.join(' ') : 'Tu pedido fue actualizado.';
+        await ClientNotificationService.createNotification({
+          pedidoId: id,
+          clienteId,
+          mensaje: message,
+          tipo: 'INFO',
+          title: 'Pedido actualizado',
+        });
+      }
+    } catch {}
     return success(res, pedido, 200, 'Pedido actualizado');
   } catch (err) { next(err); }
 };

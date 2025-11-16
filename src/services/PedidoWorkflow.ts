@@ -5,8 +5,32 @@ import { logger } from '../utils/logger.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import { applyAndEmitSemaforo } from './SemaforoService.js';
 import { autoAssignIfEnabled, maybeReassignIfEnabled } from './AssignmentService.js';
+import * as ClientNotificationService from './ClientNotificationService.js';
 
 type Estado = 'PENDIENTE'|'ASIGNADO'|'EN_PROGRESO'|'QA'|'ENTREGADO';
+
+const estadoCopy: Record<Estado, { title: string; body: string }> = {
+  PENDIENTE: {
+    title: 'Pedido recibido',
+    body: 'Registramos tu pedido y está esperando su turno para iniciar.'
+  },
+  ASIGNADO: {
+    title: 'Pedido asignado',
+    body: 'Un técnico fue asignado a tu trabajo y prepara los materiales.'
+  },
+  EN_PROGRESO: {
+    title: 'Estamos trabajando en tu pedido',
+    body: 'Tu pieza está en proceso de fabricación en este momento.'
+  },
+  QA: {
+    title: 'Control de calidad',
+    body: 'Tu pedido está pasando por las pruebas y controles finales.'
+  },
+  ENTREGADO: {
+    title: 'Pedido entregado',
+    body: 'Tu pedido fue entregado. ¡Gracias!'
+  }
+};
 
 export async function transitionEstado(pedidoId: number, newEstado: Estado, opts: { userId?: number; note?: string } = {}) {
   const now = new Date();
@@ -50,18 +74,14 @@ export async function transitionEstado(pedidoId: number, newEstado: Estado, opts
       const inicio = pedido.fecha_inicio ? new Date(pedido.fecha_inicio) : null;
       const leadSec = inicio ? Math.max(1, Math.round((now.getTime() - inicio.getTime()) / 1000)) : null;
       await prisma.pedidos.update({ where: { id: pedidoId }, data: { tiempo_real_sec: leadSec, semaforo: 'VERDE' } });
-      // Notificación de entrega
-      const entregaNotif = await prisma.notificaciones.create({
-        data: {
-          pedido_id: pedidoId,
-          cliente_id: pedido.cliente_id,
-          mensaje: 'Tu pedido fue entregado. ¡Gracias! ',
-          tipo: 'ENTREGA',
-        }
-      }).catch(() => null);
-      if (entregaNotif) {
-        RealtimeService.emitToClient(pedido.cliente_id, 'notification:new', entregaNotif);
-      }
+            // Notificacion de entrega (persistencia + push)
+      await ClientNotificationService.createNotification({
+        pedidoId,
+        clienteId: pedido.cliente_id,
+        mensaje: estadoCopy.ENTREGADO.body,
+        tipo: 'ENTREGA',
+        title: estadoCopy.ENTREGADO.title,
+      });
       // Alerta web para operadores
       try {
         RealtimeService.emitWebAlert('ENTREGA_COMPLETADA', `Pedido #${pedidoId} entregado`, { pedidoId });
@@ -76,12 +96,15 @@ export async function transitionEstado(pedidoId: number, newEstado: Estado, opts
         const estimSec = await predictTiempoSec(pedidoId, responsableId);
         if (estimSec > remainingSec) {
           await prisma.pedidos.update({ where: { id: pedidoId }, data: { semaforo: 'ROJO' } });
-          const alertaNotif = await prisma.notificaciones.create({
-            data: { pedido_id: pedidoId, cliente_id: pedido.cliente_id, mensaje: 'Tu pedido podría retrasarse. Estamos ajustando la planificación.', tipo: 'ALERTA' }
-          }).catch(() => null);
-          if (alertaNotif) {
-            RealtimeService.emitToClient(pedido.cliente_id, 'notification:new', alertaNotif);
-            RealtimeService.emitWebAlert('RETRASO', `Pedido #${pedidoId} en riesgo (ROJO)`, { pedidoId, reason: 'Riesgo de retraso detectado' });
+          const alertaNotif = await ClientNotificationService.createNotification({
+          pedidoId,
+          clienteId: pedido.cliente_id,
+          mensaje: 'Tu pedido podría retrasarse. Estamos ajustando la planificación.',
+          tipo: 'ALERTA',
+          title: 'Riesgo de retraso',
+        });
+        if (alertaNotif) {
+          RealtimeService.emitWebAlert('RETRASO', `Pedido #${pedidoId} en riesgo (ROJO)`, { pedidoId, reason: 'Riesgo de retraso detectado' });
           }
           await NotificationService.sendDelayNotice({
             clienteEmail: null,
@@ -121,17 +144,14 @@ export async function transitionEstado(pedidoId: number, newEstado: Estado, opts
 
   // Notificación informativa de cambio de estado
   try {
-    const infoNotif = await prisma.notificaciones.create({
-      data: {
-        pedido_id: pedidoId,
-        cliente_id: pedido.cliente_id,
-        mensaje: `Estado actualizado a ${newEstado}`,
-        tipo: 'INFO',
-      }
-    }).catch(() => null);
-    if (infoNotif) {
-      RealtimeService.emitToClient(pedido.cliente_id, 'notification:new', infoNotif);
-    }
+    const copy = estadoCopy[newEstado] ?? { title: 'Estado del pedido', body: `Estado actualizado a ${newEstado}` };
+    await ClientNotificationService.createNotification({
+      pedidoId,
+      clienteId: pedido.cliente_id,
+      mensaje: copy.body,
+      tipo: 'INFO',
+      title: copy.title,
+    });
   } catch (_) { /* ignore */ }
 
   logger.info({ msg: '[PedidoWorkflow] Estado cambiado', pedidoId, prevEstado, newEstado, userId: opts.userId, note: opts.note });

@@ -67,10 +67,13 @@ export async function applyAndEmitSemaforo(pedidoId: number) {
             orderBy: { id: 'desc' }
           });
           if (!recent) {
-            const notif = await prisma.notificaciones.create({
-              data: { pedido_id: pedidoId, cliente_id: pedido.cliente_id, mensaje: 'Tu pedido podría retrasarse. Estamos ajustando la planificación.', tipo: 'ALERTA' }
-            }).catch(() => null);
-            if (notif) RealtimeService.emitToClient(pedido.cliente_id, 'notification:new', notif);
+            await ClientNotificationService.createNotification({
+              pedidoId,
+              clienteId: pedido.cliente_id,
+              mensaje: 'Tu pedido podria retrasarse. Estamos ajustando la planificacion.',
+              tipo: 'ALERTA',
+              title: 'Riesgo de retraso',
+            });
           }
         } catch {}
       }
