@@ -25,7 +25,8 @@ type ListOptions = {
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 
-function buildTitle(tipo?: TipoNotificacion) {
+function buildTitle(tipo?: TipoNotificacion, customTitle?: string) {
+  if (customTitle) return customTitle;
   switch (tipo) {
     case 'ENTREGA': return 'Pedido listo';
     case 'ALERTA': return 'Atención a tu pedido';
