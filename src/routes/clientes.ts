@@ -66,11 +66,21 @@ router.get('/buscar', authenticate, ctrl.buscar);
  *         application/json:
  *           schema:
  *             type: object
- *             properties:
- *               nombre:
- *                 type: string
- *               telefono:
- *                 type: string
+  *             required:
+  *               - nombre
+  *               - telefono
+  *             properties:
+  *               nombre: { type: string }
+  *               telefono: { type: string }
+  *               email: { type: string }
+  *               direccion: { type: string }
+  *               ci_rut: { type: string }
+  *             example:
+  *               nombre: "Cliente Demo"
+  *               telefono: "+59170000000"
+  *               email: "demo@client.com"
+  *               direccion: "Calle Falsa 123"
+  *               ci_rut: "12345678"
  *     responses:
  *       '201':
  *         description: Cliente creado

@@ -584,13 +584,33 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "required": [
+                  "nombre",
+                  "telefono"
+                ],
                 "properties": {
                   "nombre": {
                     "type": "string"
                   },
                   "telefono": {
                     "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "direccion": {
+                    "type": "string"
+                  },
+                  "ci_rut": {
+                    "type": "string"
                   }
+                },
+                "example": {
+                  "nombre": "Cliente Demo",
+                  "telefono": "+59170000000",
+                  "email": "demo@client.com",
+                  "direccion": "Calle Falsa 123",
+                  "ci_rut": "12345678"
                 }
               }
             }
@@ -1227,10 +1247,75 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "required": [
+                  "descripcion"
+                ],
                 "properties": {
                   "descripcion": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Descripción del trabajo"
+                  },
+                  "prioridad": {
+                    "type": "string",
+                    "enum": [
+                      "BAJA",
+                      "MEDIA",
+                      "ALTA"
+                    ],
+                    "default": "MEDIA"
+                  },
+                  "cliente_id": {
+                    "type": "integer",
+                    "description": "ID de cliente existente (opcional si se envía objeto cliente)"
+                  },
+                  "cliente": {
+                    "type": "object",
+                    "description": "Crear/identificar cliente en línea (alternativa a cliente_id)",
+                    "required": [
+                      "nombre"
+                    ],
+                    "properties": {
+                      "nombre": {
+                        "type": "string"
+                      },
+                      "ci_rut": {
+                        "type": "string"
+                      },
+                      "email": {
+                        "type": "string"
+                      },
+                      "telefono": {
+                        "type": "string"
+                      },
+                      "direccion": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "responsable_id": {
+                    "type": "integer",
+                    "description": "Trabajador responsable (opcional)"
+                  },
+                  "fecha_estimada_fin": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "YYYY-MM-DD"
+                  },
+                  "precio": {
+                    "type": "number",
+                    "description": "Precio estimado del trabajo"
                   }
+                },
+                "example": {
+                  "descripcion": "Rectificar eje y soldar soporte",
+                  "prioridad": "ALTA",
+                  "cliente": {
+                    "nombre": "Industrias ABC",
+                    "telefono": "+59170000000"
+                  },
+                  "responsable_id": 3,
+                  "fecha_estimada_fin": "2025-11-05",
+                  "precio": 1200
                 }
               }
             }
