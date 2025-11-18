@@ -33,8 +33,21 @@ const router = Router();
  *           type: number
  *         etaSiToma:
  *           type: string
- *           format: date-time
  *           nullable: true
+ *           description: Fecha/hora sugerida (local) sin año, formato dd/MM HH:mm
+  *         etaFecha:
+  *           type: string
+  *           nullable: true
+  *           description: Día y mes sugeridos (dd/MM)
+  *         etaHora:
+  *           type: string
+  *           nullable: true
+  *           description: Hora sugerida (HH:mm)
+  *         etaIso:
+  *           type: string
+  *           nullable: true
+  *           format: date-time
+  *           description: ISO completa por compatibilidad
  *         saturado:
  *           type: boolean
  *         score:

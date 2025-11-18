@@ -13,9 +13,21 @@ type Candidate = {
   wipMax: number;
   capacidadLibreMin: number; // placeholder (si no hay disponibilidad, queda 0)
   desvioHistorico: number;   // 0..1 (menor = mejor)
-  etaSiToma: string | null;  // ISO string
+  etaSiToma: string | null;  // fecha/hora local sin año (dd/MM HH:mm)
+  etaFecha?: string | null;  // dd/MM
+  etaHora?: string | null;   // HH:mm
+  etaIso?: string | null;    // ISO completa para cálculos/notificaciones
   saturado: boolean;
   score: number;
+};
+
+// Formatea ETA en piezas útiles (display, fecha, hora)
+const formatEta = (ts: number) => {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const fecha = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
+  const hora = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return { display: `${fecha} ${hora}`, fecha, hora };
 };
 
 function weights() {
@@ -58,7 +70,7 @@ export async function suggestCandidates(pedidoId: number): Promise<Candidate[]> 
   const maxCap = 1; // placeholder si no hay disponibilidad
   const wipMaxEnv = Math.max(1, Number(process.env.WIP_MAX || 5));
 
-  const out: Candidate[] = [];
+  const out: (Candidate & { etaMs?: number })[] = [];
   // Tags derivados de la descripción del pedido para evaluar match de skills
   const _parsed = parseDescripcion(pedido.descripcion);
   const tags = [
@@ -89,27 +101,53 @@ export async function suggestCandidates(pedidoId: number): Promise<Candidate[]> 
     const score = (W1 * wipScore) + (W2 * capScore) + (W3 * match) + (W4 * desvioSc) + (W5 * prioBoost);
 
     let eta: string | null = null;
+    let etaFecha: string | null = null;
+    let etaHora: string | null = null;
+    let etaIso: string | null = null;
+    let etaMs: number | undefined;
     try {
       const est = await predictTiempoSec(pedidoId, t.id);
-      eta = new Date(Date.now() + est * 1000).toISOString();
+      etaMs = Date.now() + est * 1000;
+      etaIso = new Date(etaMs).toISOString();
+      const fmt = formatEta(etaMs);
+      eta = fmt.display;
+      etaFecha = fmt.fecha;
+      etaHora = fmt.hora;
     } catch {}
 
     const skills = Array.isArray((t as any).skills) ? (t as any).skills as string[] : skillArr;
     const saturado = wipActual >= wipMax;
-    out.push({ trabajadorId: t.id, nombre: t.usuario?.nombre ?? null, skills, wipActual, wipMax, capacidadLibreMin, desvioHistorico, etaSiToma: eta, saturado, score: Number(score.toFixed(4)) });
+    out.push({
+      trabajadorId: t.id,
+      nombre: t.usuario?.nombre ?? null,
+      skills,
+      wipActual,
+      wipMax,
+      capacidadLibreMin,
+      desvioHistorico,
+      etaSiToma: eta,
+      etaFecha,
+      etaHora,
+      etaIso,
+      saturado,
+      score: Number(score.toFixed(4)),
+      etaMs,
+    });
   }
 
   // Orden único con tie-breakers:
   // 1) No saturados primero
   // 2) Score descendente
   // 3) ETA ascendente (si ambos tienen)
-  return out.sort((a, b) => {
-    if (a.saturado !== b.saturado) return Number(a.saturado) - Number(b.saturado);
-    if (b.score !== a.score) return b.score - a.score;
-    const ta = a.etaSiToma ? new Date(a.etaSiToma).getTime() : Number.POSITIVE_INFINITY;
-    const tb = b.etaSiToma ? new Date(b.etaSiToma).getTime() : Number.POSITIVE_INFINITY;
-    return ta - tb;
-  });
+  return out
+    .sort((a, b) => {
+      if (a.saturado !== b.saturado) return Number(a.saturado) - Number(b.saturado);
+      if (b.score !== a.score) return b.score - a.score;
+      const ta = typeof a.etaMs === 'number' ? a.etaMs : Number.POSITIVE_INFINITY;
+      const tb = typeof b.etaMs === 'number' ? b.etaMs : Number.POSITIVE_INFINITY;
+      return ta - tb;
+    })
+    .map(({ etaMs, ...rest }) => rest);
 }
 
 export async function autoAssignIfEnabled(pedidoId: number): Promise<boolean> {
