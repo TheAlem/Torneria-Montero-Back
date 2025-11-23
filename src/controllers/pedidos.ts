@@ -7,6 +7,7 @@ import { transitionEstado } from '../services/PedidoWorkflow.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import { resolveClienteIdentity } from '../services/ClienteIdentityService.js';
 import * as ClientNotificationService from '../services/ClientNotificationService.js';
+import { recalcPedidoEstimate } from '../services/MLService.js';
 
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -102,6 +103,8 @@ export const actualizar = async (req: Request, res: Response, next: NextFunction
     if (!parsed.success) return fieldsValidation(res, parsed.error.flatten());
     const body = parsed.data as any;
     const data: any = {};
+    let needsRecalc = false;
+    const touchedFechaEstimada = typeof body.fecha_estimada_fin !== 'undefined';
     if (typeof body.descripcion !== 'undefined') data.descripcion = body.descripcion;
     if (typeof body.prioridad !== 'undefined') data.prioridad = body.prioridad;
     if (typeof body.precio !== 'undefined') data.precio = body.precio;
@@ -111,11 +114,19 @@ export const actualizar = async (req: Request, res: Response, next: NextFunction
     if (typeof body.semaforo !== 'undefined') data.semaforo = body.semaforo;
     if (typeof body.notas !== 'undefined') data.notas = body.notas;
     if (typeof body.adjuntos !== 'undefined') data.adjuntos = body.adjuntos;
+    if (typeof body.descripcion !== 'undefined' || typeof body.prioridad !== 'undefined' || typeof body.precio !== 'undefined' || typeof body.responsable_id !== 'undefined') {
+      needsRecalc = true;
+    }
 
     if (Object.keys(data).length === 0) return fail(res, 'VALIDATION_ERROR', 'No hay campos para actualizar', 400);
 
     await prisma.pedidos.update({ where: { id }, data });
     const pedido = await prisma.pedidos.findUnique({ where: { id }, include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } } } });
+    if (needsRecalc && pedido) {
+      try {
+        await recalcPedidoEstimate(id, { trabajadorId: pedido.responsable_id ?? null, updateFechaEstimada: !touchedFechaEstimada });
+      } catch {}
+    }
     try {
       const clienteId = pedido?.cliente?.id;
       if (clienteId) {
@@ -159,5 +170,10 @@ export const cambiarEstado = async (req: Request, res: Response, next: NextFunct
     if (!estado) return fail(res, 'VALIDATION_ERROR', 'Debe indicar el nuevo estado', 400);
     const pedido = await transitionEstado(id, estado, { note, userId });
     return success(res, { ok: true, pedido }, 200, 'Estado actualizado');
-  } catch (err) { next(err); }
+  } catch (err: any) {
+    if (err?.code === 'INVALID_TRANSITION') {
+      return fail(res, 'INVALID_TRANSITION', err.message || 'Transición no permitida', err.status || 400, { allowed: err.allowed || [] });
+    }
+    next(err);
+  }
 };

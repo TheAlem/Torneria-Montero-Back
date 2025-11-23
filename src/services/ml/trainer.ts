@@ -71,7 +71,7 @@ export async function trainLinearDurationModel(limit = 1000) {
   });
   if (!rows.length) {
     const model = {
-      version: 'v1.1', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const,
+      version: 'v1.2', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const,
       coef: [4 * 3600, 0, 0, 0], meta: { names: ['bias','prio_ALTA','prio_MEDIA','precio'], precioScale: null }
     };
     const path = saveModel(model);
@@ -79,12 +79,48 @@ export async function trainLinearDurationModel(limit = 1000) {
     return { count: 0, path, model, mae: null } as any;
   }
 
+  const median = (arr: number[]) => {
+    if (!arr.length) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  };
+
   // Build base (4) + extra features and target
   const samples = rows.map(r => buildBaseAndExtraFeatures({ pedido: r.pedido as any, tiempo: r as any, trabajador: (r as any).trabajador ?? null }));
   const Xbase = samples.map(s => s.xBase); // [bias, isAlta, isMedia, precio]
   const yBase = samples.map(s => s.y);
   const extras = samples.map(s => s.extraX);
   const extraNames = samples[0]?.extraNames || [];
+
+  // Priors para datasets chicos: anclar por prioridad con duraciones razonables
+  const defaultPriors = { ALTA: 8 * 3600, MEDIA: 6 * 3600, BAJA: 5 * 3600 };
+  const yAlta = samples.filter(s => s.xBase[1] === 1).map(s => s.y);
+  const yMedia = samples.filter(s => s.xBase[2] === 1).map(s => s.y);
+  const yBaja = samples.filter(s => s.xBase[1] === 0 && s.xBase[2] === 0).map(s => s.y);
+  const priors = {
+    ALTA: median(yAlta) ?? defaultPriors.ALTA,
+    MEDIA: median(yMedia) ?? defaultPriors.MEDIA,
+    BAJA: median(yBaja) ?? defaultPriors.BAJA,
+  };
+  const needAnchors = rows.length < 60;
+  if (needAnchors) {
+    const anchorPrice = median(Xbase.map(r => r[3] ?? 0)) ?? 0;
+    const anchorExtras = Array(extras[0]?.length || 0).fill(0);
+    const repeats = Math.max(3, Math.ceil(30 / Math.max(1, rows.length)));
+    const addAnchor = (prio: 'ALTA'|'MEDIA'|'BAJA', target: number) => {
+      const isAlta = prio === 'ALTA' ? 1 : 0;
+      const isMedia = prio === 'MEDIA' ? 1 : 0;
+      for (let i = 0; i < repeats; i++) {
+        Xbase.push([1, isAlta, isMedia, anchorPrice]);
+        yBase.push(target);
+        extras.push([...anchorExtras]);
+      }
+    };
+    addAnchor('ALTA', priors.ALTA);
+    addAnchor('MEDIA', priors.MEDIA);
+    addAnchor('BAJA', priors.BAJA);
+  }
 
   // Clamp target for robustness
   const minSec = Number(process.env.ML_MIN_SECONDS ?? 180);
@@ -135,7 +171,7 @@ export async function trainLinearDurationModel(limit = 1000) {
   const XtXInv = invertMatrix(XtX);
   if (!XtXInv) {
     const model = {
-      version: 'v1.1', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const,
+      version: 'v1.2', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const,
       coef: [4 * 3600, 0, 0, 0], meta: { names, precioScale: { mean, std } }
     };
     const path = saveModel(model);
@@ -153,7 +189,7 @@ export async function trainLinearDurationModel(limit = 1000) {
   const mae_valid = yhat_va.length ? (yhat_va.reduce((acc, yh, i) => acc + Math.abs(yh - yva[i][0]), 0) / yhat_va.length) : mae_train;
 
   // Persist model with training scale (used at inference)
-  const model = { version: 'v1.1', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const, coef, meta: { names, precioScale: { mean, std } } };
+  const model = { version: 'v1.2', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const, coef, meta: { names, precioScale: { mean, std }, priors } };
   const path = saveModel(model);
   await saveModelToDB(model, { total: rows.length, mae: mae_valid, precision: mae_train });
   return { count: rows.length, path, model, mae: mae_valid, mae_train, mae_valid } as any;

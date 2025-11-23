@@ -26,10 +26,20 @@ class Realtime {
   private userStreams = new Map<number, Set<Stream>>();
   private operatorStreams = new Set<Stream>();
   private clientNotifThrottle = new Map<string, number>();
+  private keepAliveMs = 25_000;
+
+  private attachKeepAlive(res: Response) {
+    const timer = setInterval(() => {
+      try { res.write(':\n\n'); } catch { clearInterval(timer); }
+    }, this.keepAliveMs);
+    res.on('close', () => clearInterval(timer));
+    res.on('finish', () => clearInterval(timer));
+  }
 
   subscribeClient(clientId: number, res: Response) {
     res.writeHead(200, sseHeaders());
     res.write(`:\n\n`); // sse ping
+    this.attachKeepAlive(res);
     const set = this.clientStreams.get(clientId) ?? new Set<Stream>();
     set.add(res);
     this.clientStreams.set(clientId, set);
@@ -43,6 +53,7 @@ class Realtime {
   subscribeUser(userId: number, res: Response) {
     res.writeHead(200, sseHeaders());
     res.write(`:\n\n`);
+    this.attachKeepAlive(res);
     const set = this.userStreams.get(userId) ?? new Set<Stream>();
     set.add(res);
     this.userStreams.set(userId, set);
@@ -56,6 +67,7 @@ class Realtime {
   subscribeOperators(res: Response) {
     res.writeHead(200, sseHeaders());
     res.write(`:\n\n`);
+    this.attachKeepAlive(res);
     this.operatorStreams.add(res);
     logger.info({ msg: '[SSE] operator subscribed', total: this.operatorStreams.size });
     res.on('close', () => {

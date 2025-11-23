@@ -4,9 +4,9 @@ import { predictTiempoSec } from './MLService.js';
 import { logger } from '../utils/logger.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import { applyAndEmitSemaforo } from './SemaforoService.js';
-import { suggestCandidates, maybeReassignIfEnabled } from './AssignmentService.js';
+import { suggestCandidates, maybeReassignIfEnabled, autoAssignIfEnabled } from './AssignmentService.js';
 import * as ClientNotificationService from './ClientNotificationService.js';
-export async function evaluateAndNotify(options?: { autoReassign?: boolean }) {
+export async function evaluateAndNotify(options?: { autoReassign?: boolean; autoAssignPending?: boolean }) {
   const now = new Date();
   const activos = await prisma.pedidos.findMany({
     where: { eliminado: false, estado: { in: ['PENDIENTE','ASIGNADO','EN_PROGRESO','QA'] } },
@@ -15,6 +15,12 @@ export async function evaluateAndNotify(options?: { autoReassign?: boolean }) {
   const affected: any[] = [];
   const allowAuto = options?.autoReassign !== false;
   for (const p of activos) {
+    // Si hay trabajos sin responsable en PENDIENTE, intentar auto-asignarlos antes de evaluar retrasos
+    if ((options?.autoAssignPending ?? true) && p.estado === 'PENDIENTE' && !p.responsable_id) {
+      try { await autoAssignIfEnabled(p.id); } catch {}
+      // luego de auto-asignar, seguimos al próximo; se evaluará en el siguiente ciclo
+      continue;
+    }
     // Nueva lógica de semáforo real (ratio por trabajador y fecha/hora):
     try {
       const res = await applyAndEmitSemaforo(p.id);

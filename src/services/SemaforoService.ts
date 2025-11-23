@@ -16,7 +16,7 @@ function getThresholds(prioridad: 'ALTA'|'MEDIA'|'BAJA'): { yellow: number; red:
   return { yellow: baseYellow, red: baseRed };
 }
 
-async function getTiempoRealSec(pedidoId: number): Promise<number> {
+export async function getTiempoRealSec(pedidoId: number): Promise<number> {
   const now = Date.now();
   const registros = await prisma.tiempos.findMany({
     where: { pedido_id: pedidoId },
@@ -42,10 +42,15 @@ export async function computeSemaforoForPedido(pedidoId: number): Promise<{ colo
   const tRestanteSec = Math.max(0, tEstimadoSec - tRealSec);
   const slackSec = Math.round((new Date(pedido.fecha_estimada_fin).getTime() - Date.now()) / 1000);
   const ratio = slackSec > 0 ? (tRestanteSec / slackSec) : Number.POSITIVE_INFINITY;
-  if (slackSec <= 0) return { color: 'ROJO', tRealSec, tEstimadoSec, slackSec, ratio };
 
-  const { yellow, red } = getThresholds(pedido.prioridad as any);
-  const color: SemaforoColor = ratio > red ? 'ROJO' : ratio > yellow ? 'AMARILLO' : 'VERDE';
+  // Nueva regla: ROJO si ya no alcanza el tiempo (slack <= 0 o tRestante >= slack).
+  if (slackSec <= 0 || tRestanteSec >= slackSec) {
+    return { color: 'ROJO', tRealSec, tEstimadoSec, slackSec, ratio };
+  }
+
+  // AMARILLO como advertencia cuando el remanente consume gran parte del margen (por defecto 80% o env).
+  const warnRatio = Number(process.env.SEMAFORO_RATIO_YELLOW ?? getThresholds(pedido.prioridad as any).yellow ?? 0.8);
+  const color: SemaforoColor = ratio >= warnRatio ? 'AMARILLO' : 'VERDE';
   return { color, tRealSec, tEstimadoSec, slackSec, ratio };
 }
 
@@ -84,5 +89,5 @@ export async function applyAndEmitSemaforo(pedidoId: number) {
   return { changed: false, prev, color, tRealSec, tEstimadoSec, slackSec, ratio } as any;
 }
 
-export default { computeSemaforoForPedido, applyAndEmitSemaforo };
+export default { computeSemaforoForPedido, applyAndEmitSemaforo, getTiempoRealSec };
 

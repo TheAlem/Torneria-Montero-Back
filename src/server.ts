@@ -1,6 +1,7 @@
 import { logger } from './utils/logger.js';
 import dotenv from 'dotenv';
 import os from 'os';
+import { prisma } from './prisma/client.js';
 dotenv.config();
 
 // When running via ts-node/esm import the compiled JS path
@@ -22,9 +23,16 @@ const getNetworkAddress = () => {
   return 'localhost';
 }
 
-app.listen(PORT, HOST, () => {
+app.listen(PORT, HOST, async () => {
   logger.info(`Server listening on http://localhost:${PORT}`);
   logger.info(`On your network: http://${getNetworkAddress()}:${PORT}`);
+  try {
+    await prisma.$connect();
+    // Keep-alive to avoid cold starts on first auth/login
+    setInterval(() => prisma.$queryRaw`SELECT 1`.catch(() => {}), 120_000);
+  } catch (e) {
+    logger.error({ msg: 'Prisma connect failed', err: (e as any)?.message });
+  }
   const enabled = String(process.env.KANBAN_MONITOR_ENABLED || 'false').toLowerCase() === 'true';
   const everySec = Number(process.env.KANBAN_MONITOR_INTERVAL_SEC || 300);
   if (enabled) {
@@ -39,14 +47,28 @@ app.listen(PORT, HOST, () => {
   // Nightly ML training (auto aprendizaje por trabajador/tiempos)
   const mlEnabled = String(process.env.ML_TRAIN_ENABLED || 'false').toLowerCase() === 'true';
   if (mlEnabled) {
-    const hourUTC = Math.min(23, Math.max(0, Number(process.env.ML_TRAIN_UTC_HOUR || 6)));
+    const parseHour = (value?: string) => {
+      const num = Number(value);
+      return Number.isFinite(num) ? num : undefined;
+    };
+    const boliviaHourRaw =
+      parseHour(process.env.ML_TRAIN_BOLIVIA_HOUR) ??
+      parseHour(process.env.ML_TRAIN_LOCAL_HOUR) ??
+      parseHour(process.env.ML_TRAIN_UTC_HOUR);
+    const boliviaHour = Math.min(23, Math.max(0, boliviaHourRaw ?? 6));
+    const BOLIVIA_TZ_OFFSET_MS = -4 * 60 * 60 * 1000; // America/La_Paz is UTC-4 all year
+    const formatHour = (hour: number) => String(hour).padStart(2, '0');
     const limit = Math.max(100, Number(process.env.ML_TRAIN_LIMIT || 2000));
     const scheduleNext = () => {
       const now = new Date();
-      const next = new Date(now);
-      next.setUTCDate(now.getUTCDate() + (now.getUTCHours() >= hourUTC ? 1 : 0));
-      next.setUTCHours(hourUTC, 0, 0, 0);
-      const ms = Math.max(1000, next.getTime() - now.getTime());
+      const nowBolivia = new Date(now.getTime() + BOLIVIA_TZ_OFFSET_MS);
+      const nextBolivia = new Date(nowBolivia);
+      if (nowBolivia.getUTCHours() >= boliviaHour) {
+        nextBolivia.setUTCDate(nextBolivia.getUTCDate() + 1);
+      }
+      nextBolivia.setUTCHours(boliviaHour, 0, 0, 0);
+      const nextUtc = new Date(nextBolivia.getTime() - BOLIVIA_TZ_OFFSET_MS);
+      const ms = Math.max(1000, nextUtc.getTime() - now.getTime());
       setTimeout(async () => {
         try {
           const { trainLinearDurationModelTF } = await import('./services/ml/train-tensor.js');
@@ -61,7 +83,7 @@ app.listen(PORT, HOST, () => {
           scheduleNext();
         }
       }, ms);
-      logger.info(`[ML] Entrenamiento programado diariamente a las ${hourUTC}:00 UTC (en ${(ms/3600000).toFixed(2)} h)`);
+      logger.info(`[ML] Entrenamiento programado diariamente a las ${formatHour(boliviaHour)}:00 America/La_Paz (en ${(ms/3600000).toFixed(2)} h)`);
     };
     scheduleNext();
   }

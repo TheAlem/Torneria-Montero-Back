@@ -2,20 +2,25 @@ import { prisma } from '../prisma/client.js';
 import { predictWithLinearModel, predictWithLatestModel } from './ml/predictor.js';
 import { getMinSeconds, getMaxSeconds } from './ml/storage.js';
 
-export async function predictTiempoSec(pedidoId: number, trabajadorId: number): Promise<number> {
+export async function predictTiempoSec(pedidoId: number, trabajadorId?: number | null): Promise<number> {
   const MIN_SEC = getMinSeconds();
   const MAX_SEC = getMaxSeconds();
   const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId } });
   if (!pedido) return 4 * 60 * 60; // 4h fallback
-  const trabajador = await prisma.trabajadores.findUnique({ where: { id: trabajadorId }, select: { skills: true, carga_actual: true, fecha_ingreso: true } }).catch(() => null);
+  const workerId = trabajadorId && trabajadorId > 0 ? trabajadorId : null;
+  const trabajador = workerId
+    ? await prisma.trabajadores.findUnique({ where: { id: workerId }, select: { skills: true, carga_actual: true, fecha_ingreso: true } }).catch(() => null)
+    : null;
 
   // Preferir histórico del trabajador en pedidos de misma prioridad
-  const tiemposTrab = await prisma.tiempos.findMany({
-    where: { trabajador_id: trabajadorId, estado: 'CERRADO' },
-    select: { duracion_sec: true, pedido: { select: { prioridad: true } } },
-    orderBy: { id: 'desc' },
-    take: 50,
-  });
+  const tiemposTrab = workerId
+    ? await prisma.tiempos.findMany({
+      where: { trabajador_id: workerId, estado: 'CERRADO' },
+      select: { duracion_sec: true, pedido: { select: { prioridad: true } } },
+      orderBy: { id: 'desc' },
+      take: 50,
+    })
+    : [];
 
   const mismos = tiemposTrab.filter(t => !!t.duracion_sec && t.pedido?.prioridad === pedido.prioridad).map(t => t.duracion_sec!)
     .filter(v => typeof v === 'number');
@@ -50,6 +55,7 @@ export async function predictTiempoSec(pedidoId: number, trabajadorId: number): 
 }
 
 export async function storePrediccion(pedidoId: number, trabajadorId: number, tEstimadoSec: number) {
+  if (!trabajadorId) return;
   try {
     await prisma.predicciones_tiempo.create({
       data: {
@@ -60,4 +66,57 @@ export async function storePrediccion(pedidoId: number, trabajadorId: number, tE
       },
     });
   } catch (_) { /* swallow */ }
+}
+
+export async function upsertResultadoPrediccion(
+  pedidoId: number,
+  trabajadorId: number | null | undefined,
+  tRealSec: number | null,
+  tEstimadoSec?: number | null,
+  modeloVersion = 'v1.0'
+) {
+  if (!trabajadorId) return { updated: false };
+  const est = tEstimadoSec ?? null;
+  const desvio = est && tRealSec != null
+    ? Math.min(1, Math.abs(tRealSec - est) / Math.max(1, est))
+    : null;
+
+  const existing = await prisma.predicciones_tiempo.findFirst({
+    where: { pedido_id: pedidoId, trabajador_id: trabajadorId },
+    orderBy: { id: 'desc' },
+  });
+
+  if (existing) {
+    await prisma.predicciones_tiempo.update({
+      where: { id: existing.id },
+      data: { t_real_sec: tRealSec, t_estimado_sec: est ?? existing.t_estimado_sec, desvio: desvio ?? existing.desvio ?? undefined }
+    });
+    return { updated: true, desvio };
+  }
+
+  await prisma.predicciones_tiempo.create({
+    data: {
+      pedido_id: pedidoId,
+      trabajador_id: trabajadorId,
+      t_estimado_sec: est,
+      t_real_sec: tRealSec,
+      desvio,
+      modelo_version: modeloVersion,
+    }
+  });
+  return { updated: true, desvio };
+}
+
+export async function recalcPedidoEstimate(pedidoId: number, opts?: { trabajadorId?: number | null; updateFechaEstimada?: boolean }) {
+  const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId }, select: { responsable_id: true, fecha_estimada_fin: true } });
+  if (!pedido) return null;
+  const workerId = opts?.trabajadorId ?? pedido.responsable_id ?? null;
+  const estimado = await predictTiempoSec(pedidoId, workerId);
+  const data: any = { tiempo_estimado_sec: estimado };
+  if (opts?.updateFechaEstimada !== false && !pedido.fecha_estimada_fin) {
+    data.fecha_estimada_fin = new Date(Date.now() + estimado * 1000);
+  }
+  await prisma.pedidos.update({ where: { id: pedidoId }, data }).catch(() => {});
+  if (workerId) await storePrediccion(pedidoId, workerId, estimado);
+  return estimado;
 }

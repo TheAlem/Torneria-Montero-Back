@@ -37,12 +37,13 @@ export async function trainLinearDurationModelTF(limit = 1000) {
   });
 
   if (!rows.length) {
+    const priors = { ALTA: 8 * 3600, MEDIA: 6 * 3600, BAJA: 5 * 3600 };
     const model: LinearModel = {
       version: 'v1.2-tf',
       trainedAt: new Date().toISOString(),
       algo: 'linear-regression-v1',
       coef: [4 * 3600, 0, 0, 0],
-      meta: { names: ['bias', 'prio_ALTA', 'prio_MEDIA', 'precio'], precioScale: null },
+      meta: { names: ['bias', 'prio_ALTA', 'prio_MEDIA', 'precio'], precioScale: null, priors },
     };
     const path = saveModel(model);
     await saveModelToDB(model, { total: 0, mae: null });
@@ -62,6 +63,39 @@ export async function trainLinearDurationModelTF(limit = 1000) {
   const extras = samples.map(s => s.extraX);
   const extraNames = samples[0]?.extraNames || [];
   const yBase = samples.map(s => s.y);
+  const median = (arr: number[]) => {
+    if (!arr.length) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  };
+  const defaultPriors = { ALTA: 8 * 3600, MEDIA: 6 * 3600, BAJA: 5 * 3600 };
+  const yAlta = samples.filter(s => s.xBase[1] === 1).map(s => s.y);
+  const yMedia = samples.filter(s => s.xBase[2] === 1).map(s => s.y);
+  const yBaja = samples.filter(s => s.xBase[1] === 0 && s.xBase[2] === 0).map(s => s.y);
+  const priors = {
+    ALTA: median(yAlta) ?? defaultPriors.ALTA,
+    MEDIA: median(yMedia) ?? defaultPriors.MEDIA,
+    BAJA: median(yBaja) ?? defaultPriors.BAJA,
+  };
+  const needAnchors = rows.length < 60;
+  if (needAnchors) {
+    const anchorPrice = median(Xbase.map(r => r[3] ?? 0)) ?? 0;
+    const anchorExtras = Array(extras[0]?.length || 0).fill(0);
+    const repeats = Math.max(3, Math.ceil(30 / Math.max(1, rows.length)));
+    const addAnchor = (prio: 'ALTA'|'MEDIA'|'BAJA', target: number) => {
+      const isAlta = prio === 'ALTA' ? 1 : 0;
+      const isMedia = prio === 'MEDIA' ? 1 : 0;
+      for (let i = 0; i < repeats; i++) {
+        Xbase.push([1, isAlta, isMedia, anchorPrice]);
+        yBase.push(target);
+        extras.push([...anchorExtras]);
+      }
+    };
+    addAnchor('ALTA', priors.ALTA);
+    addAnchor('MEDIA', priors.MEDIA);
+    addAnchor('BAJA', priors.BAJA);
+  }
 
   // Clamp target para robustez (igual que código actual)
   const minSec = Number(process.env.ML_MIN_SECONDS ?? 180);
@@ -170,7 +204,7 @@ export async function trainLinearDurationModelTF(limit = 1000) {
     trainedAt: new Date().toISOString(),
     algo: 'linear-regression-v1',
     coef,
-    meta: { names, precioScale: { mean, std } },
+    meta: { names, precioScale: { mean, std }, priors },
   };
 
   const path = saveModel(model);

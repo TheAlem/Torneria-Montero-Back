@@ -33,36 +33,44 @@ function bucketize(n: number, cuts: number[]): number[] {
   return out;
 }
 
+function stripAccents(str: string) {
+  try { return str.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch { return str; }
+}
+
+function textHas(text: string, substrings: string[]) {
+  return substrings.some(s => text.includes(s));
+}
+
 export function parseDescripcion(descRaw?: string | null): ParsedDescripcion {
-  const desc = String(descRaw || '').toLowerCase();
+  const desc = stripAccents(String(descRaw || '').toLowerCase());
   const materiales = {
-    acero: +(desc.includes('acero')),
-    aluminio: +(desc.includes('alumin') || desc.includes('alu ')),
-    bronce: +(desc.includes('bronce')),
-    inox: +(desc.includes('inox') || desc.includes('acero inox')),
-    plastico: +(desc.includes('plast') || desc.includes('teflon') || desc.includes('nylon')),
+    acero: +textHas(desc, ['acero']),
+    aluminio: +textHas(desc, ['alumin', 'alu ']),
+    bronce: +textHas(desc, ['bronc']),
+    inox: +textHas(desc, ['inox', 'acero inox']),
+    plastico: +textHas(desc, ['plast', 'teflon', 'nylon', 'delrin']),
   } as const;
   const procesos = {
-    torneado: +(desc.includes('torne') || desc.includes('torno')),
-    fresado: +(desc.includes('fresa') || desc.includes('fresad')),
-    roscado: +(desc.includes('rosca') || /\bm\d{1,2}\b/.test(desc)),
-    taladrado: +(desc.includes('taladr') || desc.includes('perfor')),
-    soldadura: +(desc.includes('soldad')),
-    pulido: +(desc.includes('pulid') || desc.includes('lij')),
+    torneado: +textHas(desc, ['torne', 'torno', 'torn ', 'torni', 'tornear', 'torner', 'torn.']),
+    fresado: +textHas(desc, ['fresa', 'fresad', 'fresn']),
+    roscado: +(textHas(desc, ['rosca', 'rosc', 'hilo']) || /\bm\d{1,2}\b/.test(desc)),
+    taladrado: +textHas(desc, ['taladr', 'perfor', 'agujer', 'mea', 'broca']),
+    soldadura: +textHas(desc, ['soldad']),
+    pulido: +textHas(desc, ['pulid', 'lij', 'acabado']),
   } as const;
   const domain = {
-    rodamiento: +(desc.includes('rodamiento')),
-    palier: +(desc.includes('palier') || desc.includes('paliers')),
-    buje: +(desc.includes('buje') || desc.includes('bujes')),
-    bandeja: +(desc.includes('bandeja') || desc.includes('bandejas')),
-    tren_delantero: +(desc.includes('tren delantero')),
-    engranaje: +(desc.includes('engranaje') || desc.includes('engranajes')),
-    corona: +(desc.includes('corona') || desc.includes('coronas')),
-    rellenado: +(desc.includes('rellenado') || desc.includes('rellenar')),
-    recargue: +(desc.includes('recargue')),
-    prensa: +(desc.includes('prensa')),
-    alineado: +(desc.includes('alineado') || desc.includes('alinear')),
-    torneado_base: +(desc.includes('tornear base') || desc.includes('torneado base') || desc.includes('tornear la base')),
+    rodamiento: +textHas(desc, ['rodamient']),
+    palier: +textHas(desc, ['palier', 'paliers']),
+    buje: +textHas(desc, ['buje', 'bujes']),
+    bandeja: +textHas(desc, ['bandeja', 'bandejas']),
+    tren_delantero: +textHas(desc, ['tren delantero', 'tren-delantero']),
+    engranaje: +textHas(desc, ['engranaje', 'engranajes']),
+    corona: +textHas(desc, ['corona', 'coronas']),
+    rellenado: +textHas(desc, ['rellenado', 'rellenar', 'rellen']),
+    recargue: +textHas(desc, ['recargue', 'recarg']),
+    prensa: +textHas(desc, ['prensa']),
+    alineado: +textHas(desc, ['alineado', 'alinear', 'alineac']),
+    torneado_base: +textHas(desc, ['tornear base', 'torneado base', 'tornear la base', 'base de asiento']),
   } as const;
   const hasRosca = procesos.roscado ? 1 : (/\bm\d{1,2}\b/.test(desc) ? 1 : 0);
   const hasTol = desc.includes('±') || desc.includes('+/-') || /\bh\d\b/.test(desc) || /\bit\d\b/.test(desc) ? 1 : 0;
@@ -98,8 +106,13 @@ export function normalizeSkills(sk: any): string[] {
     // Profesiones → procesos
     const map: Record<string, string> = {
       'tornero': 'torneado',
+      'torneado': 'torneado',
+      'torne': 'torneado',
+      'torno': 'torneado',
       'fresador': 'fresado',
+      'fresa': 'fresado',
       'soldador': 'soldadura',
+      'soldad': 'soldadura',
       'rosquero': 'roscado',
       'taladro': 'taladrado',
       'taladrar': 'taladrado',

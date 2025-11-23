@@ -1,9 +1,9 @@
 import { prisma } from '../prisma/client.js';
-import { predictTiempoSec } from './MLService.js';
-import { applyAndEmitSemaforo, computeSemaforoForPedido } from './SemaforoService.js';
+import { recalcPedidoEstimate } from './MLService.js';
+import { applyAndEmitSemaforo } from './SemaforoService.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import { logger } from '../utils/logger.js';
-import { parseDescripcion, normalizeSkills, skillOverlap } from './ml/features.js';
+import { buildCandidatesForPedido } from './HeuristicsService.js';
 
 type Candidate = {
   trabajadorId: number;
@@ -21,133 +21,27 @@ type Candidate = {
   score: number;
 };
 
-// Formatea ETA en piezas útiles (display, fecha, hora)
-const formatEta = (ts: number) => {
-  const d = new Date(ts);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const fecha = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
-  const hora = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  return { display: `${fecha} ${hora}`, fecha, hora };
-};
-
-function weights() {
-  return {
-    W1: Number(process.env.ASSIGN_W1 ?? 0.30), // (1 - WIP/WIP_MAX)
-    W2: Number(process.env.ASSIGN_W2 ?? 0.20), // capacidad libre normalizada
-    W3: Number(process.env.ASSIGN_W3 ?? 0.25), // match de skill (placeholder)
-    W4: Number(process.env.ASSIGN_W4 ?? 0.15), // (1 - desvío)
-    W5: Number(process.env.ASSIGN_W5 ?? 0.10), // boost por prioridad
-  };
-}
-
-function normalize(n: number, min: number, max: number) {
-  if (!isFinite(n) || !isFinite(min) || !isFinite(max) || max <= min) return 0;
-  const v = (n - min) / (max - min);
-  return Math.max(0, Math.min(1, v));
-}
-
-function prioridadBoost(pr: string) {
-  return pr === 'ALTA' ? 1 : pr === 'MEDIA' ? 0.6 : 0.3;
-}
-
 export async function suggestCandidates(pedidoId: number): Promise<Candidate[]> {
-  const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId }, select: { prioridad: true, descripcion: true } });
-  if (!pedido) return [];
-
-  const trabajadores = await prisma.trabajadores.findMany({
-    where: { estado: 'Activo' },
-    include: { usuario: { select: { nombre: true } } }
+  const candidates = await buildCandidatesForPedido(pedidoId, 10, { includeUser: true, includeEta: true });
+  return candidates.map(c => ({
+    trabajadorId: c.trabajadorId,
+    nombre: c.nombre,
+    skills: c.skills,
+    wipActual: c.wipActual,
+    wipMax: c.wipMax,
+    capacidadLibreMin: 0,
+    desvioHistorico: typeof c.desvioHistorico === 'number' ? c.desvioHistorico : null,
+    etaSiToma: c.eta?.display ?? null,
+    etaFecha: c.eta?.fecha ?? null,
+    etaHora: c.eta?.hora ?? null,
+    etaIso: c.eta?.iso ?? null,
+    saturado: c.saturado,
+    score: c.score,
+  })).sort((a, b) => {
+    if (a.saturado !== b.saturado) return Number(a.saturado) - Number(b.saturado);
+    if (b.score !== a.score) return b.score - a.score;
+    return 0;
   });
-  if (!trabajadores.length) return [];
-
-  // desvío histórico por trabajador (promedio)
-  const desvios = await prisma.predicciones_tiempo.groupBy({ by: ['trabajador_id'], _avg: { desvio: true } });
-  const desvioMap = new Map<number, number>();
-  desvios.forEach(d => desvioMap.set(d.trabajador_id, d._avg.desvio ?? 0.3));
-
-  const { W1, W2, W3, W4, W5 } = weights();
-  const maxWipObserved = Math.max(...trabajadores.map(t => t.carga_actual || 0), 1);
-  const maxCap = 1; // placeholder si no hay disponibilidad
-  const wipMaxEnv = Math.max(1, Number(process.env.WIP_MAX || 5));
-
-  const out: (Candidate & { etaMs?: number })[] = [];
-  // Tags derivados de la descripción del pedido para evaluar match de skills
-  const _parsed = parseDescripcion(pedido.descripcion);
-  const tags = [
-    ...(_parsed.materiales.acero ? ['acero'] : []),
-    ...(_parsed.materiales.aluminio ? ['aluminio'] : []),
-    ...(_parsed.materiales.bronce ? ['bronce'] : []),
-    ...(_parsed.materiales.inox ? ['inox'] : []),
-    ...(_parsed.procesos.torneado ? ['torneado'] : []),
-    ...(_parsed.procesos.fresado ? ['fresado'] : []),
-    ...(_parsed.procesos.roscado ? ['roscado'] : []),
-    ...(_parsed.procesos.taladrado ? ['taladrado'] : []),
-    ...(_parsed.procesos.soldadura ? ['soldadura'] : []),
-    ...(_parsed.procesos.pulido ? ['pulido'] : []),
-  ];
-  for (const t of trabajadores) {
-    const wipActual = t.carga_actual || 0;
-    const wipMax = wipMaxEnv; // si tienes un campo por trabajador, úsalo
-    const capacidadLibreMin = 0; // TODO: derivar de disponibilidad si existe
-    const desvioHistorico = desvioMap.get(t.id) ?? 0.3;
-    const skillArr = normalizeSkills((t as any).skills);
-    const { score: match } = skillOverlap(skillArr, tags);
-
-    const wipScore = 1 - normalize(wipActual, 0, Math.max(wipMax, maxWipObserved));
-    const capScore = normalize(capacidadLibreMin, 0, maxCap);
-    const desvioSc = 1 - Math.max(0, Math.min(1, desvioHistorico));
-    const prioBoost = prioridadBoost(String(pedido.prioridad));
-
-    const score = (W1 * wipScore) + (W2 * capScore) + (W3 * match) + (W4 * desvioSc) + (W5 * prioBoost);
-
-    let eta: string | null = null;
-    let etaFecha: string | null = null;
-    let etaHora: string | null = null;
-    let etaIso: string | null = null;
-    let etaMs: number | undefined;
-    try {
-      const est = await predictTiempoSec(pedidoId, t.id);
-      etaMs = Date.now() + est * 1000;
-      etaIso = new Date(etaMs).toISOString();
-      const fmt = formatEta(etaMs);
-      eta = fmt.display;
-      etaFecha = fmt.fecha;
-      etaHora = fmt.hora;
-    } catch {}
-
-    const skills = Array.isArray((t as any).skills) ? (t as any).skills as string[] : skillArr;
-    const saturado = wipActual >= wipMax;
-    out.push({
-      trabajadorId: t.id,
-      nombre: t.usuario?.nombre ?? null,
-      skills,
-      wipActual,
-      wipMax,
-      capacidadLibreMin,
-      desvioHistorico,
-      etaSiToma: eta,
-      etaFecha,
-      etaHora,
-      etaIso,
-      saturado,
-      score: Number(score.toFixed(4)),
-      etaMs,
-    });
-  }
-
-  // Orden único con tie-breakers:
-  // 1) No saturados primero
-  // 2) Score descendente
-  // 3) ETA ascendente (si ambos tienen)
-  return out
-    .sort((a, b) => {
-      if (a.saturado !== b.saturado) return Number(a.saturado) - Number(b.saturado);
-      if (b.score !== a.score) return b.score - a.score;
-      const ta = typeof a.etaMs === 'number' ? a.etaMs : Number.POSITIVE_INFINITY;
-      const tb = typeof b.etaMs === 'number' ? b.etaMs : Number.POSITIVE_INFINITY;
-      return ta - tb;
-    })
-    .map(({ etaMs, ...rest }) => rest);
 }
 
 export async function autoAssignIfEnabled(pedidoId: number): Promise<boolean> {
@@ -163,6 +57,7 @@ export async function autoAssignForced(pedidoId: number): Promise<boolean> {
 
   await prisma.asignaciones.create({ data: { pedido_id: pedidoId, trabajador_id: choice.trabajadorId, origen: 'SUGERIDO', comentarios: 'AUTO_ASSIGN_TOP1' } }).catch(() => {});
   await prisma.pedidos.update({ where: { id: pedidoId }, data: { responsable_id: choice.trabajadorId } });
+  try { await recalcPedidoEstimate(pedidoId, { trabajadorId: choice.trabajadorId, updateFechaEstimada: true }); } catch {}
   await applyAndEmitSemaforo(pedidoId);
   try { RealtimeService.emitToOperators('assignment:changed', { pedidoId, trabajadorId: choice.trabajadorId, ts: Date.now() }); } catch {}
   return true;
@@ -170,10 +65,29 @@ export async function autoAssignForced(pedidoId: number): Promise<boolean> {
 
 export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'AMARILLO'|'ROJO', options?: { minScoreDelta?: number }) {
   if (color !== 'ROJO') return false;
+  const autoReassignEnabled = String(process.env.AUTO_REASSIGN_ENABLED ?? 'true').toLowerCase() === 'true';
+  if (!autoReassignEnabled) {
+    try { RealtimeService.emitToOperators('assignment:auto-keep', { pedidoId, reason: 'auto_reassign_disabled', ts: Date.now() }); } catch {}
+    return false;
+  }
   const candidates = await suggestCandidates(pedidoId);
   if (!candidates.length) {
     try { RealtimeService.emitToOperators('assignment:auto-keep', { pedidoId, reason: 'no_candidates', ts: Date.now() }); } catch {}
     return false;
+  }
+
+  // Evitar re-asignaciones en bucle: enfriar por N minutos desde la última AUTO_REASSIGN_DELAY
+  const cooldownMin = Number(process.env.AUTO_REASSIGN_COOLDOWN_MINUTES ?? 60);
+  if (cooldownMin > 0) {
+    const cutoff = new Date(Date.now() - cooldownMin * 60 * 1000);
+    const recent = await prisma.asignaciones.findFirst({
+      where: { pedido_id: pedidoId, comentarios: 'AUTO_REASSIGN_DELAY', fecha_asignacion: { gte: cutoff } },
+      orderBy: { fecha_asignacion: 'desc' }
+    });
+    if (recent) {
+      try { RealtimeService.emitToOperators('assignment:auto-keep', { pedidoId, reason: 'cooldown', cooldownMin, ts: Date.now() }); } catch {}
+      return false;
+    }
   }
 
   const pedido = await prisma.pedidos.findUnique({
@@ -185,9 +99,11 @@ export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'A
   });
 
   const currentId = pedido?.responsable_id ?? null;
-  const best = candidates.find(c => !c.saturado) ?? candidates[0];
   const currentCandidate = currentId ? candidates.find(c => c.trabajadorId === currentId) : undefined;
-  if (!best) {
+  const bestAvailable = candidates.find(c => !c.saturado) ?? candidates[0];
+  const alternative = candidates.find(c => !c.saturado && c.trabajadorId !== currentId) ?? candidates.find(c => c.trabajadorId !== currentId);
+  const target = alternative ?? bestAvailable;
+  if (!target) {
     try { RealtimeService.emitToOperators('assignment:auto-keep', { pedidoId, reason: 'no_best', ts: Date.now(), currentId }); } catch {}
     return false;
   }
@@ -195,16 +111,19 @@ export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'A
   const minDelta = typeof options?.minScoreDelta === 'number'
     ? options!.minScoreDelta
     : Number(process.env.AUTO_REASSIGN_MIN_DELTA ?? 0.1);
-  const deltaScore = currentCandidate ? best.score - currentCandidate.score : best.score;
+  const deltaScore = currentCandidate ? target.score - currentCandidate.score : target.score;
+  const forceOnDelay = String(process.env.AUTO_REASSIGN_FORCE_ON_DELAY ?? 'true').toLowerCase() === 'true';
+  const maxDrop = Number(process.env.AUTO_REASSIGN_MAX_SCORE_DROP ?? 0.05); // límite para no saltar a alguien claramente peor
+  const allowForce = forceOnDelay && currentId !== null && target.trabajadorId !== currentId && deltaScore >= -maxDrop;
 
-  if (!currentId || currentId === best.trabajadorId || deltaScore < minDelta) {
+  if (!currentId || target.trabajadorId === currentId || (deltaScore < minDelta && !allowForce)) {
     try {
       RealtimeService.emitToOperators('assignment:auto-keep', {
         pedidoId,
-        reason: currentId === best.trabajadorId ? 'already_best' : 'delta_low',
+        reason: target.trabajadorId === currentId ? 'already_best' : 'delta_low',
         deltaScore,
         currentId,
-        best,
+        best: target,
         ts: Date.now()
       });
     } catch {}
@@ -214,7 +133,7 @@ export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'A
   await prisma.asignaciones.create({
     data: {
       pedido_id: pedidoId,
-      trabajador_id: best.trabajadorId,
+      trabajador_id: target.trabajadorId,
       origen: 'MANUAL',
       comentarios: 'AUTO_REASSIGN_DELAY'
     }
@@ -222,7 +141,7 @@ export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'A
 
   await prisma.pedidos.update({
     where: { id: pedidoId },
-    data: { responsable_id: best.trabajadorId }
+    data: { responsable_id: target.trabajadorId }
   });
 
   await applyAndEmitSemaforo(pedidoId);
@@ -230,10 +149,11 @@ export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'A
   const payload = {
     pedidoId,
     from: currentId,
-    to: best.trabajadorId,
+    to: target.trabajadorId,
     deltaScore,
     ts: Date.now(),
-    best
+    best: target,
+    forced: allowForce
   };
 
   logger.info({ msg: '[Assignment] Auto reasignación por retraso', ...payload });
@@ -245,7 +165,7 @@ export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'A
     RealtimeService.emitWebAlert(
       'ASIGNACION',
       `Pedido #${pedidoId} reasignado automáticamente por retraso`,
-      { pedidoId, from: currentId, to: best.trabajadorId, deltaScore }
+      { pedidoId, from: currentId, to: target.trabajadorId, deltaScore }
     );
   } catch {}
   return true;

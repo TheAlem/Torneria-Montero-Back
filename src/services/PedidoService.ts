@@ -1,5 +1,6 @@
 import { prisma } from '../prisma/client.js';
 import { CreatePedidoBody } from '../validators/pedidoValidator.js';
+import { recalcPedidoEstimate } from './MLService.js';
 
 async function resolveClienteId(payload: CreatePedidoBody): Promise<number> {
   if (payload.cliente_id) return Number(payload.cliente_id);
@@ -52,5 +53,8 @@ export async function createPedido(payload: CreatePedidoBody) {
   if (payload.responsable_id) data.responsable_id = Number(payload.responsable_id);
 
   const pedido = await prisma.pedidos.create({ data });
-  return pedido;
+  try {
+    await recalcPedidoEstimate(pedido.id, { trabajadorId: data.responsable_id ?? null, updateFechaEstimada: true });
+  } catch {}
+  return await prisma.pedidos.findUnique({ where: { id: pedido.id } }) as any;
 }
