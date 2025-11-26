@@ -109,6 +109,7 @@ export const actualizar = async (req: Request, res: Response, next: NextFunction
     if (typeof body.prioridad !== 'undefined') data.prioridad = body.prioridad;
     if (typeof body.precio !== 'undefined') data.precio = body.precio;
     if (typeof body.fecha_estimada_fin !== 'undefined') data.fecha_estimada_fin = body.fecha_estimada_fin ? new Date(body.fecha_estimada_fin) : null;
+    if (typeof body.pagado !== 'undefined') data.pagado = body.pagado;
     if (typeof body.estado !== 'undefined') data.estado = body.estado;
     if (typeof body.responsable_id !== 'undefined') data.responsable_id = body.responsable_id;
     if (typeof body.semaforo !== 'undefined') data.semaforo = body.semaforo;

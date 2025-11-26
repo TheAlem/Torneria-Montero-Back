@@ -48,6 +48,7 @@ export async function createPedido(payload: CreatePedidoBody) {
     cliente_id: Number(clienteId),
     precio: payload.precio ?? null,
     fecha_estimada_fin: payload.fecha_estimada_fin ? new Date(payload.fecha_estimada_fin) : null,
+    pagado: payload.pagado ?? false,
     creado_por_id: null,
   };
   if (payload.responsable_id) data.responsable_id = Number(payload.responsable_id);

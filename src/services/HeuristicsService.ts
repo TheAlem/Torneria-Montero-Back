@@ -29,6 +29,7 @@ export type CandidateProfile = {
   skillScore: number;
   wipScore: number;
   desvioScore: number;
+  roleScore: number;
   onTimeScore: number;
   delayScore: number;
   prioridadScore: number;
@@ -115,6 +116,25 @@ function prioridadScore(pr: string) {
   return 0.4;
 }
 
+function normalizeRol(rol?: string | null): string {
+  if (!rol) return '';
+  const r = rol.toLowerCase().trim();
+  if (r.includes('torner')) return 'torneado';
+  if (r.includes('torno')) return 'torneado';
+  if (r.includes('fres')) return 'fresado';
+  if (r.includes('sold')) return 'soldadura';
+  if (r.includes('ayud')) return 'ayudante';
+  if (r.includes('pulid') || r.includes('acab')) return 'pulido';
+  return r;
+}
+
+function roleMatchScore(rolToken: string, required: string[]): number {
+  if (!rolToken) return 0.5;
+  if (rolToken === 'ayudante') return 0.6; // puede asistir pero no liderar
+  if (!required.length) return 0.5;
+  return required.includes(rolToken) ? 1 : 0.4;
+}
+
 // Formatea ETA en piezas útiles (display, fecha, hora)
 const formatEta = (ts: number) => {
   const d = new Date(ts);
@@ -139,6 +159,20 @@ export async function buildCandidatesForPedido(
   if (!trabajadores.length) return [];
 
   const statsMap = await buildWorkerStats(trabajadores.map(t => t.id));
+  // WIP real por responsable (Estados activos: PENDIENTE, ASIGNADO, EN_PROGRESO, QA). Si no hay, usamos carga_actual como fallback.
+  const activeStates = ['PENDIENTE', 'ASIGNADO', 'EN_PROGRESO', 'QA'];
+  const workerIds = trabajadores.map(t => t.id);
+  const wipCounts = new Map<number, number>();
+  workerIds.forEach(id => wipCounts.set(id, 0));
+  const activos = await prisma.pedidos.findMany({
+    where: { responsable_id: { in: workerIds }, estado: { in: activeStates as any } },
+    select: { responsable_id: true }
+  });
+  for (const p of activos) {
+    const rid = p.responsable_id;
+    wipCounts.set(rid, (wipCounts.get(rid) || 0) + 1);
+  }
+
   const parsed = parseDescripcion(pedido.descripcion);
   const tags = [
     ...(parsed.materiales.acero ? ['acero'] : []),
@@ -165,6 +199,13 @@ export async function buildCandidatesForPedido(
     ...(parsed.domain.alineado ? ['alineado'] : []),
     ...(parsed.domain.torneado_base ? ['torneado_base'] : []),
   ];
+  const requiredProcesses: string[] = [];
+  if (parsed.procesos.torneado) requiredProcesses.push('torneado');
+  if (parsed.procesos.fresado) requiredProcesses.push('fresado');
+  if (parsed.procesos.roscado) requiredProcesses.push('roscado');
+  if (parsed.procesos.taladrado) requiredProcesses.push('taladrado');
+  if (parsed.procesos.soldadura) requiredProcesses.push('soldadura');
+  if (parsed.procesos.pulido) requiredProcesses.push('pulido');
 
   const wipMax = Math.max(1, Number(process.env.WIP_MAX || 5));
   const prioScore = prioridadScore(pedido.prioridad as any);
@@ -175,18 +216,22 @@ export async function buildCandidatesForPedido(
     const skills = normalizeSkills((t as any).skills);
     const { score: overlap } = skillOverlap(skills, tags);
     const skillScore = tags.length ? overlap : 0.6;
-    const wipActual = t.carga_actual || 0;
-    const wipScore = Math.max(0, Math.min(1, 1 - (wipActual / Math.max(1, wipMax))));
+    const wipActual = wipCounts.get(t.id) ?? 0;
+    // Penaliza más rápido por WIP: 0->1, 1->0.5, 2->0.33, 3->0.25
+    const wipScore = Math.max(0, Math.min(1, 1 / (1 + Math.max(0, wipActual))));
+    const rolToken = normalizeRol((t as any).rol_tecnico);
+    const roleScore = roleMatchScore(rolToken, requiredProcesses);
     const desvioScore = stats.avgDesvio != null ? (1 - Math.min(1, Math.max(0, stats.avgDesvio))) : 0.5;
     const onTimeScore = stats.conFechaCompromiso > 0 ? (stats.onTime / Math.max(1, stats.conFechaCompromiso)) : null;
     const delayScore = stats.avgDelaySec != null ? Math.max(0, 1 - Math.min(1, stats.avgDelaySec / (4 * 3600))) : null;
 
     const historyWeight = stats.completados > 0 ? Math.min(0.85, stats.completados / (stats.completados + 3)) : 0;
     const baseNeutral = 0.5;
-    const raw = (0.25 * skillScore)
-      + (0.25 * wipScore)
+    const raw = (0.20 * skillScore)
+      + (0.20 * wipScore)
       + (0.20 * desvioScore)
-      + (0.15 * (onTimeScore ?? 0.5))
+      + (0.15 * roleScore)
+      + (0.10 * (onTimeScore ?? 0.5))
       + (0.10 * (delayScore ?? 0.5))
       + (0.05 * prioScore);
 
@@ -197,7 +242,9 @@ export async function buildCandidatesForPedido(
         + ((prioScore - 0.5) * 0.05)
       : baseNeutral * (1 - historyWeight) + raw * historyWeight;
 
-    const finalScore = Number(Math.max(0, Math.min(1, blended)).toFixed(4));
+    // Penalización adicional por WIP acumulado para empujar a quienes tienen menos trabajo
+    const wipPenalty = Math.min(0.3, Math.max(0, wipActual) * 0.1); // 0.1 por trabajo, cap 0.3
+    const finalScore = Number(Math.max(0, Math.min(1, blended - wipPenalty)).toFixed(4));
 
     let etaSec: number | null = null;
     let eta: CandidateProfile['eta'] = null;
@@ -232,13 +279,21 @@ export async function buildCandidatesForPedido(
       eta,
       disponibilidad: (t as any).disponibilidad ?? null,
       rol_tecnico: (t as any).rol_tecnico ?? null,
+      roleScore,
     });
   }
 
   return candidates
     .sort((a, b) => {
       if (a.saturado !== b.saturado) return Number(a.saturado) - Number(b.saturado);
-      if (b.score !== a.score) return b.score - a.score;
+      if (b.score !== a.score) {
+        // si están cercanos (<0.05), prioriza menor WIP
+        const diff = b.score - a.score;
+        if (Math.abs(diff) < 0.05) {
+          if (a.wipActual !== b.wipActual) return a.wipActual - b.wipActual;
+        }
+        return diff > 0 ? 1 : -1;
+      }
       const ta = typeof a.etaSec === 'number' ? a.etaSec! : Number.POSITIVE_INFINITY;
       const tb = typeof b.etaSec === 'number' ? b.etaSec! : Number.POSITIVE_INFINITY;
       return ta - tb;

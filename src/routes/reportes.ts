@@ -10,12 +10,12 @@ const router = Router();
  *   get:
  *     tags:
  *       - Reportes
- *     summary: Reporte semanal
+ *     summary: Reporte semanal (KPIs operativos)
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       '200':
- *         description: Reporte semanal
+ *         description: Reporte semanal con KPIs (SLA, tiempos, backlog, tops)
  *         content:
  *           application/json:
  *             schema:
@@ -29,12 +29,12 @@ router.get('/semanal', authenticate, ctrl.semanal);
  *   get:
  *     tags:
  *       - Reportes
- *     summary: Reporte mensual
+ *     summary: Reporte mensual (KPIs operativos)
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       '200':
- *         description: Reporte mensual
+ *         description: Reporte mensual con KPIs (SLA, tiempos, backlog, tops)
  *         content:
  *           application/json:
  *             schema:
@@ -48,7 +48,7 @@ router.get('/mensual', authenticate, ctrl.mensual);
  *   get:
  *     tags:
  *       - Reportes
- *     summary: Historial de alertas (web)
+ *     summary: Historial de alertas (web) con resumen
  *     security:
  *       - BearerAuth: []
  *     parameters:

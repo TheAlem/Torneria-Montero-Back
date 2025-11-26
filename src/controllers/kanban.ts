@@ -12,11 +12,13 @@ const kanbanCardSelect = {
   descripcion: true,
   prioridad: true,
   estado: true,
+  pagado: true,
   semaforo: true,
   fecha_estimada_fin: true,
   fecha_actualizacion: true,
   cliente: { select: { id: true, nombre: true, telefono: true } },
   responsable: { select: { id: true, usuario: { select: { id: true, nombre: true } } } },
+   asignaciones: { select: { origen: true, id: true }, orderBy: { id: 'desc' }, take: 1 },
 };
 
 /**
@@ -27,13 +29,17 @@ export const listarKanban = async (req: Request, res: Response, next: NextFuncti
   try {
     const { q, workerId, clientId, priority, limit = '50' } = req.query as Record<string, string | undefined>;
 
-    const parsedLimit = Math.min(parseInt(String(limit), 10) || 50, 200);
+    const parsedLimitRaw = parseInt(String(limit), 10);
+    const parsedLimit = Math.min(Number.isFinite(parsedLimitRaw) ? parsedLimitRaw : 50, 200);
 
     const baseWhere: any = { AND: [{ eliminado: false }] };
-    if (workerId) baseWhere.AND.push({ responsable_id: Number(workerId) });
-    if (clientId) baseWhere.AND.push({ cliente_id: Number(clientId) });
-    if (priority) baseWhere.AND.push({ prioridad: priority as any });
-    if (q) {
+    const workerNum = Number(workerId);
+    if (Number.isFinite(workerNum) && workerNum > 0) baseWhere.AND.push({ responsable_id: workerNum });
+    const clientNum = Number(clientId);
+    if (Number.isFinite(clientNum) && clientNum > 0) baseWhere.AND.push({ cliente_id: clientNum });
+    const prio = priority ? String(priority).toUpperCase() : undefined;
+    if (prio && ['BAJA','MEDIA','ALTA'].includes(prio)) baseWhere.AND.push({ prioridad: prio as any });
+    if (q && String(q).trim()) {
       const searchQuery = {
         OR: [
           { descripcion: { contains: q as string, mode: 'insensitive' } },
@@ -57,12 +63,24 @@ export const listarKanban = async (req: Request, res: Response, next: NextFuncti
       return (map as any)[s] ?? s;
     };
 
-    const [pending, inProgress, qa, delivered] = await Promise.all([
+    const addAutoFlag = (arr: any[]) => arr.map((c: any) => {
+      const lastAssign = Array.isArray(c.asignaciones) && c.asignaciones.length ? c.asignaciones[0] : null;
+      const autoAsignado = lastAssign?.origen === 'SUGERIDO';
+      const { asignaciones, ...rest } = c;
+      return { ...rest, autoAsignado };
+    });
+
+    const [pendingRaw, inProgressRaw, qaRaw, deliveredRaw] = await Promise.all([
       prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('PENDIENTE') }, select: kanbanCardSelect, orderBy: [{ prioridad: 'desc' }, { fecha_actualizacion: 'desc' }], take: parsedLimit }),
       prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('EN_PROGRESO') }, select: kanbanCardSelect, orderBy: [{ prioridad: 'desc' }, { fecha_actualizacion: 'desc' }], take: parsedLimit }),
       prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('QA') }, select: kanbanCardSelect, orderBy: { fecha_actualizacion: 'desc' }, take: parsedLimit }),
       prisma.pedidos.findMany({ where: { ...baseWhere, estado: normalizeEstado('ENTREGADO') }, select: kanbanCardSelect, orderBy: { fecha_actualizacion: 'desc' }, take: parsedLimit }),
     ]);
+
+    const pending = addAutoFlag(pendingRaw);
+    const inProgress = addAutoFlag(inProgressRaw);
+    const qa = addAutoFlag(qaRaw);
+    const delivered = addAutoFlag(deliveredRaw);
 
     return success(res, { columns: { PENDIENTE: pending, EN_PROGRESO: inProgress, QA: qa, ENTREGADO: delivered } });
   } catch (err) {

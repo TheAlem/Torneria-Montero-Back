@@ -145,6 +145,7 @@ model pedidos {
   descripcion         String
   prioridad           Prioridad     @default(MEDIA)
   precio              Decimal?      @db.Decimal(10, 2)
+  pagado              Boolean       @default(false)
   fecha_inicio        DateTime      @default(now())
   fecha_estimada_fin  DateTime?
   estado              EstadoPedido  @default(PENDIENTE)

@@ -3,7 +3,7 @@ import NotificationService from './notificationService.js';
 import { predictTiempoSec, recalcPedidoEstimate, upsertResultadoPrediccion } from './MLService.js';
 import { logger } from '../utils/logger.js';
 import RealtimeService from '../realtime/RealtimeService.js';
-import { applyAndEmitSemaforo, getTiempoRealSec } from './SemaforoService.js';
+import { applyAndEmitSemaforo, getTiempoRealSec, businessSecondsBetween } from './SemaforoService.js';
 import { autoAssignIfEnabled, maybeReassignIfEnabled } from './AssignmentService.js';
 import * as ClientNotificationService from './ClientNotificationService.js';
 
@@ -62,6 +62,9 @@ export async function transitionEstado(
     throw err;
   }
   const updateData: any = { estado: newEstado };
+  if (newEstado === 'ENTREGADO') {
+    updateData.pagado = true; // al entregar, se marca pagado automáticamente
+  }
   if (prevEstado !== 'EN_PROGRESO' && newEstado === 'EN_PROGRESO') {
     updateData.fecha_inicio = now;
   }
@@ -116,7 +119,7 @@ export async function transitionEstado(
         const estimSec = pedido.tiempo_estimado_sec ?? await recalcPedidoEstimate(pedidoId, { trabajadorId: pedido.responsable_id ?? null, updateFechaEstimada: false }) ?? null;
         const tRealSec = await getTiempoRealSec(pedidoId);
         const inicio = pedido.fecha_inicio ? new Date(pedido.fecha_inicio) : null;
-        const leadSec = inicio ? Math.max(1, Math.round((now.getTime() - inicio.getTime()) / 1000)) : null;
+        const leadSec = inicio ? Math.max(1, businessSecondsBetween(inicio, now)) : null;
         const finalReal = tRealSec ?? leadSec ?? null;
         await prisma.pedidos.update({ where: { id: pedidoId }, data: { tiempo_real_sec: finalReal ?? null, semaforo: 'VERDE' } });
         await upsertResultadoPrediccion(pedidoId, pedido.responsable_id ?? null, finalReal, estimSec ?? null);
@@ -186,7 +189,7 @@ export async function transitionEstado(
     try {
       const res = await applyAndEmitSemaforo(pedidoId);
       const color = (res as any)?.color;
-      if (color === 'ROJO') {
+      if (newEstado !== 'ENTREGADO' && color === 'ROJO') {
         try { await maybeReassignIfEnabled(pedidoId, 'ROJO'); } catch {}
       }
     } catch (_) { /* ignore */ }

@@ -5,6 +5,106 @@ import ClientNotificationService from './ClientNotificationService.js';
 
 export type SemaforoColor = 'VERDE' | 'AMARILLO' | 'ROJO';
 
+// Configuración de jornada laboral (por defecto 08:00-12:30 y 14:00-18:00, lun-sáb; sábado puede ser distinto)
+const WORK_DAYS = process.env.WORKDAYS || '1-6'; // 0=domingo ... 6=sábado; default lun-sab
+const WORKDAY_SHIFTS_STR = process.env.WORKDAY_SHIFTS || '08:00-12:30,14:00-18:00';
+const WORKDAY_SHIFTS_SAT = process.env.WORKDAY_SHIFTS_SAT; // opcional, ej. "08:00-12:00"
+
+const parseHHMM = (v: string): { h: number; m: number } => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(v || '');
+  if (!m) return { h: 8, m: 0 };
+  const h = Math.min(23, Math.max(0, Number(m[1])));
+  const mm = Math.min(59, Math.max(0, Number(m[2])));
+  return { h, m: mm };
+};
+
+type Shift = { startMin: number; endMin: number };
+const parseShifts = (raw: string): Shift[] => {
+  const out: Shift[] = [];
+  const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+  for (const p of parts) {
+    const [s, e] = p.split('-').map(x => (x || '').trim());
+    if (!s || !e) continue;
+    const sh = parseHHMM(s);
+    const eh = parseHHMM(e);
+    const startMin = sh.h * 60 + sh.m;
+    const endMin = eh.h * 60 + eh.m;
+    if (endMin > startMin) out.push({ startMin, endMin });
+  }
+  if (!out.length) {
+    // fallback single shift 08:00-18:00
+    out.push({ startMin: 8 * 60, endMin: 18 * 60 });
+  }
+  return out;
+};
+
+const globalShifts = parseShifts(WORKDAY_SHIFTS_STR);
+const saturdayShifts = WORKDAY_SHIFTS_SAT ? parseShifts(WORKDAY_SHIFTS_SAT) : parseShifts('08:00-12:00');
+
+const workdaysSet = (() => {
+  const parts = WORK_DAYS.split(',').map(p => p.trim()).filter(Boolean);
+  const set = new Set<number>();
+  for (const p of parts) {
+    if (p.includes('-')) {
+      const [a, b] = p.split('-').map(n => Number(n));
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        const start = Math.max(0, Math.min(6, a));
+        const end = Math.max(0, Math.min(6, b));
+        for (let d = start; d <= end; d++) set.add(d);
+      }
+    } else {
+      const n = Number(p);
+      if (Number.isFinite(n)) set.add(Math.max(0, Math.min(6, n)));
+    }
+  }
+  if (!set.size) for (let d = 1; d <= 6; d++) set.add(d); // fallback lun-sab
+  return set;
+})();
+
+function isWorkDay(d: Date) {
+  return workdaysSet.has(d.getDay());
+}
+
+function getShiftsForDay(dayIdx: number): Shift[] {
+  if (!workdaysSet.has(dayIdx)) return [];
+  if (dayIdx === 6 && saturdayShifts.length) return saturdayShifts; // sábado
+  return globalShifts;
+}
+
+/**
+ * Calcula segundos laborables entre dos fechas, considerando jornada (múltiples tramos) y días hábiles.
+ * No asume 24/7 para evitar sobreestimar atraso/ETA. Usa la configuración global.
+ */
+export function businessSecondsBetween(start: Date, end: Date): number {
+  if (!start || !end || end <= start) return 0;
+  let total = 0;
+  let cursor = new Date(start);
+  let guard = 0;
+
+  while (cursor < end && guard < 370) { // guarda de ~1 año para evitar loops
+    const shifts = getShiftsForDay(cursor.getDay());
+    if (shifts.length) {
+      const dayStart = new Date(cursor);
+      dayStart.setHours(0, 0, 0, 0);
+      for (const sh of shifts) {
+        const wStart = new Date(dayStart.getTime() + sh.startMin * 60000);
+        const wEnd = new Date(dayStart.getTime() + sh.endMin * 60000);
+        const from = cursor > wStart ? cursor : wStart;
+        const to = end < wEnd ? end : wEnd;
+        if (to > from) total += Math.round((to.getTime() - from.getTime()) / 1000);
+      }
+    }
+    // siguiente día al inicio de la primera jornada
+    cursor = new Date(cursor);
+    cursor.setDate(cursor.getDate() + 1);
+    const nextShifts = getShiftsForDay(cursor.getDay());
+    const first = nextShifts.length ? nextShifts[0] : globalShifts[0];
+    cursor.setHours(Math.floor(first.startMin / 60), first.startMin % 60, 0, 0);
+    guard++;
+  }
+  return total;
+}
+
 function getThresholds(prioridad: 'ALTA'|'MEDIA'|'BAJA'): { yellow: number; red: number } {
   const baseYellow = Number(process.env.SEMAFORO_RATIO_YELLOW || 0.7);
   const baseRed = Number(process.env.SEMAFORO_RATIO_RED || 1.0);
@@ -40,7 +140,7 @@ export async function computeSemaforoForPedido(pedidoId: number): Promise<{ colo
   const responsableId = pedido.responsable_id ?? 0;
   const tEstimadoSec = await predictTiempoSec(pedidoId, responsableId);
   const tRestanteSec = Math.max(0, tEstimadoSec - tRealSec);
-  const slackSec = Math.round((new Date(pedido.fecha_estimada_fin).getTime() - Date.now()) / 1000);
+  const slackSec = businessSecondsBetween(new Date(), new Date(pedido.fecha_estimada_fin));
   const ratio = slackSec > 0 ? (tRestanteSec / slackSec) : Number.POSITIVE_INFINITY;
 
   // Nueva regla: ROJO si ya no alcanza el tiempo (slack <= 0 o tRestante >= slack).

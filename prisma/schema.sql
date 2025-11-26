@@ -79,6 +79,7 @@ CREATE TABLE "pedidos" (
     "descripcion" TEXT NOT NULL,
     "prioridad" "Prioridad" NOT NULL DEFAULT 'MEDIA',
     "precio" DECIMAL(10,2),
+    "pagado" BOOLEAN NOT NULL DEFAULT false,
     "fecha_inicio" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "fecha_estimada_fin" TIMESTAMP(3),
     "estado" "EstadoPedido" NOT NULL DEFAULT 'PENDIENTE',

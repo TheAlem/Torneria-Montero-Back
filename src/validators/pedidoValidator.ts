@@ -16,6 +16,7 @@ export const CreatePedidoSchema = z.object({
   responsable_id: z.number().int().optional(),
   fecha_estimada_fin: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   precio: z.number().positive().optional(),
+  pagado: z.boolean().optional(),
 }).refine((data) => !!data.cliente_id || !!data.cliente, {
   message: 'Debe proporcionar cliente_id o un objeto cliente',
   path: ['cliente'],
@@ -33,6 +34,7 @@ export const UpdatePedidoSchema = z.object({
   semaforo: z.enum(['VERDE','AMARILLO','ROJO']).optional(),
   notas: z.string().optional(),
   adjuntos: z.array(z.string()).optional(),
+  pagado: z.boolean().optional(),
 });
 
 export type UpdatePedidoBody = z.infer<typeof UpdatePedidoSchema>;
