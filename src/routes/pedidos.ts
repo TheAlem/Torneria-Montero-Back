@@ -84,48 +84,53 @@ router.get('/:id', authenticate, ctrl.getById);
  *         application/json:
  *           schema:
  *             type: object
-  *             required:
-  *               - descripcion
-  *             properties:
-  *               descripcion:
-  *                 type: string
-  *                 description: Descripción del trabajo
-  *               prioridad:
-  *                 type: string
-  *                 enum: [BAJA, MEDIA, ALTA]
-  *                 default: MEDIA
-  *               cliente_id:
-  *                 type: integer
-  *                 description: ID de cliente existente (opcional si se envía objeto cliente)
-  *               cliente:
-  *                 type: object
-  *                 description: Crear/identificar cliente en línea (alternativa a cliente_id)
-  *                 required: [nombre]
-  *                 properties:
-  *                   nombre: { type: string }
-  *                   ci_rut: { type: string }
-  *                   email: { type: string }
-  *                   telefono: { type: string }
-  *                   direccion: { type: string }
-  *               responsable_id:
-  *                 type: integer
-  *                 description: Trabajador responsable (opcional)
-  *               fecha_estimada_fin:
-  *                 type: string
-  *                 format: date
-  *                 description: YYYY-MM-DD
-  *               precio:
-  *                 type: number
-  *                 description: Precio estimado del trabajo
-  *             example:
-  *               descripcion: "Rectificar eje y soldar soporte"
-  *               prioridad: "ALTA"
-  *               cliente:
-  *                 nombre: "Industrias ABC"
-  *                 telefono: "+59170000000"
-  *               responsable_id: 3
-  *               fecha_estimada_fin: "2025-11-05"
-  *               precio: 1200
+ *             required:
+ *               - titulo
+ *               - descripcion
+ *             properties:
+ *               titulo:
+ *                 type: string
+ *                 description: Titulo corto del trabajo/pedido
+ *               descripcion:
+ *                 type: string
+ *                 description: Descripcion detallada del trabajo
+ *               prioridad:
+ *                 type: string
+ *                 enum: [BAJA, MEDIA, ALTA]
+ *                 default: MEDIA
+ *               cliente_id:
+ *                 type: integer
+ *                 description: ID de cliente existente (opcional si se envia objeto cliente)
+ *               cliente:
+ *                 type: object
+ *                 description: Crear/identificar cliente en linea (alternativa a cliente_id)
+ *                 required: [nombre]
+ *                 properties:
+ *                   nombre: { type: string }
+ *                   ci_rut: { type: string }
+ *                   email: { type: string }
+ *                   telefono: { type: string }
+ *                   direccion: { type: string }
+ *               responsable_id:
+ *                 type: integer
+ *                 description: Trabajador responsable (opcional)
+ *               fecha_estimada_fin:
+ *                 type: string
+ *                 format: date
+ *                 description: YYYY-MM-DD
+ *               precio:
+ *                 type: number
+ *                 description: Precio estimado del trabajo
+ *             example:
+ *               titulo: "Reparar eje principal"
+ *               descripcion: "Rectificar eje y soldar soporte"
+ *               prioridad: "ALTA"
+ *               cliente:
+ *                 nombre: "Industrias ABC"
+ *                 telefono: "+59170000000"
+ *               responsable_id: 3
+ *               fecha_estimada_fin: "2025-11-05"
+ *               precio: 1200
  *     responses:
  *       '201':
  *         description: Pedido creado
@@ -134,7 +139,7 @@ router.get('/:id', authenticate, ctrl.getById);
  *             schema:
  *               $ref: '#/components/schemas/UnifiedSuccess'
  *       '422':
- *         description: Error de validación de campos
+ *         description: Error de validacion de campos
  *         content:
  *           application/json:
  *             schema:
@@ -164,6 +169,7 @@ router.post('/', authenticate, ctrl.crear);
  *           schema:
  *             type: object
  *             properties:
+ *               titulo: { type: string }
  *               descripcion: { type: string }
  *               prioridad: { type: string, enum: [BAJA, MEDIA, ALTA] }
  *               precio: { type: number, nullable: true }
@@ -173,6 +179,7 @@ router.post('/', authenticate, ctrl.crear);
  *               semaforo: { type: string, enum: [VERDE, AMARILLO, ROJO] }
  *               notas: { type: string }
  *               adjuntos: { type: array, items: { type: string } }
+ *               pagado: { type: boolean }
  *     responses:
  *       '200':
  *         description: Pedido actualizado
@@ -181,7 +188,7 @@ router.post('/', authenticate, ctrl.crear);
  *             schema:
  *               $ref: '#/components/schemas/UnifiedSuccess'
  *       '422':
- *         description: Error de validación de campos
+ *         description: Error de validacion de campos
  *         content:
  *           application/json:
  *             schema:
@@ -245,7 +252,7 @@ router.delete('/:id', authenticate, ctrl.eliminar);
  *                 type: integer
  *     responses:
  *       '200':
- *         description: Estado actualizado y métricas recalculadas
+ *         description: Estado actualizado y metricas recalculadas
  *         content:
  *           application/json:
  *             schema:

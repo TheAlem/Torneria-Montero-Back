@@ -2,7 +2,7 @@
 import { prisma } from '../prisma/client.js';
 import * as PedidoService from '../services/PedidoService.js';
 import { success, fail, fieldsValidation } from '../utils/response.js';
-import { UpdatePedidoSchema } from '../validators/pedidoValidator.js';
+import { CreatePedidoSchema, UpdatePedidoSchema } from '../validators/pedidoValidator.js';
 import { transitionEstado } from '../services/PedidoWorkflow.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import { resolveClienteIdentity } from '../services/ClienteIdentityService.js';
@@ -66,7 +66,9 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
 
 export const crear = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const created = await PedidoService.createPedido(req.body);
+    const parsed = CreatePedidoSchema.safeParse(req.body);
+    if (!parsed.success) return fieldsValidation(res, parsed.error.flatten());
+    const created = await PedidoService.createPedido(parsed.data);
     const pedido = await prisma.pedidos.findUnique({ where: { id: created.id }, include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } } } });
     // Alerta para operadores: nuevo trabajo agregado
     try {
@@ -105,6 +107,7 @@ export const actualizar = async (req: Request, res: Response, next: NextFunction
     const data: any = {};
     let needsRecalc = false;
     const touchedFechaEstimada = typeof body.fecha_estimada_fin !== 'undefined';
+    if (typeof body.titulo !== 'undefined') data.titulo = body.titulo;
     if (typeof body.descripcion !== 'undefined') data.descripcion = body.descripcion;
     if (typeof body.prioridad !== 'undefined') data.prioridad = body.prioridad;
     if (typeof body.precio !== 'undefined') data.precio = body.precio;
@@ -115,7 +118,7 @@ export const actualizar = async (req: Request, res: Response, next: NextFunction
     if (typeof body.semaforo !== 'undefined') data.semaforo = body.semaforo;
     if (typeof body.notas !== 'undefined') data.notas = body.notas;
     if (typeof body.adjuntos !== 'undefined') data.adjuntos = body.adjuntos;
-    if (typeof body.descripcion !== 'undefined' || typeof body.prioridad !== 'undefined' || typeof body.precio !== 'undefined' || typeof body.responsable_id !== 'undefined') {
+    if (typeof body.titulo !== 'undefined' || typeof body.descripcion !== 'undefined' || typeof body.prioridad !== 'undefined' || typeof body.precio !== 'undefined' || typeof body.responsable_id !== 'undefined') {
       needsRecalc = true;
     }
 
@@ -132,11 +135,12 @@ export const actualizar = async (req: Request, res: Response, next: NextFunction
       const clienteId = pedido?.cliente?.id;
       if (clienteId) {
         const mensajes: string[] = [];
-        if (typeof body.estado !== 'undefined') mensajes.push(`El estado cambió a ${body.estado}.`);
+        if (typeof body.estado !== 'undefined') mensajes.push(`El estado cambio a ${body.estado}.`);
         if (typeof body.fecha_estimada_fin !== 'undefined') mensajes.push('Actualizamos la fecha estimada de entrega.');
         if (typeof body.responsable_id !== 'undefined') mensajes.push('Asignamos un nuevo responsable para tu trabajo.');
-        if (typeof body.descripcion !== 'undefined') mensajes.push('Ajustamos la descripción de tu pedido.');
-        if (typeof body.notas !== 'undefined') mensajes.push('Se añadieron nuevas notas a tu pedido.');
+        if (typeof body.titulo !== 'undefined') mensajes.push('Actualizamos el titulo de tu pedido.');
+        if (typeof body.descripcion !== 'undefined') mensajes.push('Ajustamos la descripcion de tu pedido.');
+        if (typeof body.notas !== 'undefined') mensajes.push('Se anadieron nuevas notas a tu pedido.');
         if (typeof body.adjuntos !== 'undefined') mensajes.push('Actualizamos los archivos asociados a tu pedido.');
         const message = mensajes.length ? mensajes.join(' ') : 'Tu pedido fue actualizado.';
         await ClientNotificationService.createNotification({

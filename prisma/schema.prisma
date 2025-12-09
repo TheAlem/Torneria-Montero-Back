@@ -142,6 +142,7 @@ model pedidos {
   id                  Int           @id @default(autoincrement())
   cliente_id          Int
   cliente             clientes      @relation(fields: [cliente_id], references: [id])
+  titulo              String        @default("") @db.VarChar(200)
   descripcion         String
   prioridad           Prioridad     @default(MEDIA)
   precio              Decimal?      @db.Decimal(10, 2)

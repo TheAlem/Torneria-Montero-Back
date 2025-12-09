@@ -42,7 +42,9 @@ async function resolveClienteId(payload: CreatePedidoBody): Promise<number> {
 
 export async function createPedido(payload: CreatePedidoBody) {
   const clienteId = await resolveClienteId(payload);
+  const titulo = payload.titulo || payload.descripcion;
   const data: any = {
+    titulo,
     descripcion: payload.descripcion,
     prioridad: payload.prioridad,
     cliente_id: Number(clienteId),

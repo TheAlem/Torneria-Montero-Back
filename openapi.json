@@ -137,7 +137,8 @@
           "etaSiToma": {
             "type": "string",
             "format": "date-time",
-            "nullable": true
+            "nullable": true,
+            "description": "Fecha/hora sugerida (local) sin año, formato dd/MM HH:mm"
           },
           "saturado": {
             "type": "boolean"
@@ -145,6 +146,22 @@
           "score": {
             "type": "number",
             "format": "float"
+          },
+          "etaFecha": {
+            "type": "string",
+            "nullable": true,
+            "description": "Día y mes sugeridos (dd/MM)"
+          },
+          "etaHora": {
+            "type": "string",
+            "nullable": true,
+            "description": "Hora sugerida (HH:mm)"
+          },
+          "etaIso": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "ISO completa por compatibilidad"
           }
         }
       },
@@ -1248,12 +1265,17 @@
               "schema": {
                 "type": "object",
                 "required": [
+                  "titulo",
                   "descripcion"
                 ],
                 "properties": {
+                  "titulo": {
+                    "type": "string",
+                    "description": "Titulo corto del trabajo/pedido"
+                  },
                   "descripcion": {
                     "type": "string",
-                    "description": "Descripción del trabajo"
+                    "description": "Descripcion detallada del trabajo"
                   },
                   "prioridad": {
                     "type": "string",
@@ -1266,11 +1288,11 @@
                   },
                   "cliente_id": {
                     "type": "integer",
-                    "description": "ID de cliente existente (opcional si se envía objeto cliente)"
+                    "description": "ID de cliente existente (opcional si se envia objeto cliente)"
                   },
                   "cliente": {
                     "type": "object",
-                    "description": "Crear/identificar cliente en línea (alternativa a cliente_id)",
+                    "description": "Crear/identificar cliente en linea (alternativa a cliente_id)",
                     "required": [
                       "nombre"
                     ],
@@ -1307,6 +1329,7 @@
                   }
                 },
                 "example": {
+                  "titulo": "Reparar eje principal",
                   "descripcion": "Rectificar eje y soldar soporte",
                   "prioridad": "ALTA",
                   "cliente": {
@@ -1333,7 +1356,7 @@
             }
           },
           "422": {
-            "description": "Error de validación de campos",
+            "description": "Error de validacion de campos",
             "content": {
               "application/json": {
                 "schema": {
@@ -1434,6 +1457,9 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "titulo": {
+                    "type": "string"
+                  },
                   "descripcion": {
                     "type": "string"
                   },
@@ -1484,6 +1510,9 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "pagado": {
+                    "type": "boolean"
                   }
                 }
               }
@@ -1502,7 +1531,7 @@
             }
           },
           "422": {
-            "description": "Error de validación de campos",
+            "description": "Error de validacion de campos",
             "content": {
               "application/json": {
                 "schema": {
@@ -1598,7 +1627,7 @@
         },
         "responses": {
           "200": {
-            "description": "Estado actualizado y métricas recalculadas",
+            "description": "Estado actualizado y metricas recalculadas",
             "content": {
               "application/json": {
                 "schema": {
@@ -1615,7 +1644,7 @@
         "tags": [
           "Reportes"
         ],
-        "summary": "Reporte semanal",
+        "summary": "Reporte semanal (KPIs operativos)",
         "security": [
           {
             "BearerAuth": []
@@ -1623,11 +1652,135 @@
         ],
         "responses": {
           "200": {
-            "description": "Reporte semanal",
+            "description": "Reporte semanal con KPIs (SLA, tiempos, backlog, tops, ganancia)",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnifiedSuccess"
+                },
+                "example": {
+                  "status": "success",
+                  "data": {
+                    "periodo": "semanal",
+                    "fechaGeneracion": "2025-05-01T00:00:00.000Z",
+                    "rango": {
+                      "from": "2025-04-24T00:00:00.000Z",
+                      "to": "2025-05-01T00:00:00.000Z"
+                    },
+                    "datos": {
+                      "total": 12,
+                      "gananciaTotal": 3200,
+                      "porEstado": {
+                        "PENDIENTE": 3,
+                        "EN_PROGRESO": 4,
+                        "QA": 1,
+                        "ENTREGADO": 4
+                      },
+                      "porPrioridad": {
+                        "ALTA": 3,
+                        "MEDIA": 6,
+                        "BAJA": 3
+                      },
+                      "porSemaforo": {
+                        "VERDE": 7,
+                        "AMARILLO": 3,
+                        "ROJO": 2
+                      },
+                      "resumen": {
+                        "completados": 4,
+                        "enProgreso": 4,
+                        "pendientes": 3,
+                        "atrasadosAbiertos": 2
+                      },
+                      "sla": {
+                        "onTime": 3,
+                        "late": 1,
+                        "rate": 0.75
+                      },
+                      "tiempos": {
+                        "leadTimeMedSec": 82000,
+                        "leadTimeAvgSec": 90000,
+                        "promedioEstimadoSec": 70000,
+                        "promedioRealSec": 91000,
+                        "maeEstimVsReal": 21000
+                      },
+                      "throughputPorDia": 0.57,
+                      "topResponsables": [
+                        {
+                          "id": 2,
+                          "nombre": "Juan",
+                          "total": 5,
+                          "completados": 3,
+                          "enProceso": 1,
+                          "atrasados": 1
+                        }
+                      ],
+                      "topClientes": [
+                        {
+                          "id": 5,
+                          "nombre": "Cliente ABC",
+                          "total": 4,
+                          "completados": 2,
+                          "enProceso": 1,
+                          "atrasados": 1
+                        }
+                      ],
+                      "entregasRecientes": [
+                        {
+                          "id": 10,
+                          "titulo": "Reparar eje",
+                          "cliente": "ABC",
+                          "responsable": "Juan",
+                          "prioridad": "ALTA",
+                          "estado": "ENTREGADO",
+                          "semaforo": "VERDE",
+                          "fecha_inicio": "2025-04-27T00:00:00.000Z",
+                          "fecha_estimada_fin": "2025-04-29T00:00:00.000Z",
+                          "fecha_entrega": "2025-04-28T18:00:00.000Z",
+                          "tiempo_estimado_sec": 72000,
+                          "tiempo_real_sec": 65000,
+                          "atraso_sec": -7000
+                        }
+                      ],
+                      "trabajos": [
+                        {
+                          "id": 10,
+                          "titulo": "Reparar eje",
+                          "descripcion": "Rectificado...",
+                          "estado": "ENTREGADO",
+                          "prioridad": "ALTA",
+                          "semaforo": "VERDE",
+                          "fecha_inicio": "2025-04-27T00:00:00.000Z",
+                          "fecha_estimada_fin": "2025-04-29T00:00:00.000Z",
+                          "fecha_actualizacion": "2025-04-28T18:00:00.000Z",
+                          "tiempo_estimado_sec": 72000,
+                          "tiempo_real_sec": 65000,
+                          "cliente_id": 5,
+                          "responsable_id": 2,
+                          "precio": 800,
+                          "monto": 800,
+                          "importe": 800,
+                          "estado_pago": "PAGADO",
+                          "paymentStatus": "PAGADO",
+                          "notas": null,
+                          "cliente": {
+                            "id": 5,
+                            "nombre": "Cliente ABC",
+                            "direccion": "Calle 1",
+                            "telefono": "7000"
+                          },
+                          "responsable": {
+                            "id": 2,
+                            "rol_tecnico": "Soldador",
+                            "usuario": {
+                              "nombre": "Juan"
+                            },
+                            "direccion": "Av 2"
+                          }
+                        }
+                      ]
+                    }
+                  }
                 }
               }
             }
@@ -1640,7 +1793,7 @@
         "tags": [
           "Reportes"
         ],
-        "summary": "Reporte mensual",
+        "summary": "Reporte mensual (KPIs operativos)",
         "security": [
           {
             "BearerAuth": []
@@ -1648,7 +1801,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Reporte mensual",
+            "description": "Reporte mensual con KPIs (SLA, tiempos, backlog, tops, ganancia)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1665,7 +1818,7 @@
         "tags": [
           "Reportes"
         ],
-        "summary": "Historial de alertas (web)",
+        "summary": "Historial de alertas (web) con resumen",
         "security": [
           {
             "BearerAuth": []

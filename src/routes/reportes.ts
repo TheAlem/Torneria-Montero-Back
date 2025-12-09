@@ -15,11 +15,33 @@ const router = Router();
  *       - BearerAuth: []
  *     responses:
  *       '200':
- *         description: Reporte semanal con KPIs (SLA, tiempos, backlog, tops)
+ *         description: Reporte semanal con KPIs (SLA, tiempos, backlog, tops, ganancia)
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/UnifiedSuccess'
+ *             example:
+ *               status: success
+ *               data:
+ *                 periodo: semanal
+ *                 fechaGeneracion: '2025-05-01T00:00:00.000Z'
+ *                 rango: { from: '2025-04-24T00:00:00.000Z', to: '2025-05-01T00:00:00.000Z' }
+ *                 datos:
+ *                   total: 12
+ *                   gananciaTotal: 3200
+ *                   porEstado: { PENDIENTE: 3, EN_PROGRESO: 4, QA: 1, ENTREGADO: 4 }
+ *                   porPrioridad: { ALTA: 3, MEDIA: 6, BAJA: 3 }
+ *                   porSemaforo: { VERDE: 7, AMARILLO: 3, ROJO: 2 }
+ *                   resumen: { completados: 4, enProgreso: 4, pendientes: 3, atrasadosAbiertos: 2 }
+ *                   sla: { onTime: 3, late: 1, rate: 0.75 }
+ *                   tiempos: { leadTimeMedSec: 82000, leadTimeAvgSec: 90000, promedioEstimadoSec: 70000, promedioRealSec: 91000, maeEstimVsReal: 21000 }
+ *                   throughputPorDia: 0.57
+ *                   topResponsables: [{ id: 2, nombre: 'Juan', total: 5, completados: 3, enProceso: 1, atrasados: 1 }]
+ *                   topClientes: [{ id: 5, nombre: 'Cliente ABC', total: 4, completados: 2, enProceso: 1, atrasados: 1 }]
+ *                   entregasRecientes:
+ *                     - { id: 10, titulo: 'Reparar eje', cliente: 'ABC', responsable: 'Juan', prioridad: 'ALTA', estado: 'ENTREGADO', semaforo: 'VERDE', fecha_inicio: '2025-04-27T00:00:00.000Z', fecha_estimada_fin: '2025-04-29T00:00:00.000Z', fecha_entrega: '2025-04-28T18:00:00.000Z', tiempo_estimado_sec: 72000, tiempo_real_sec: 65000, atraso_sec: -7000 }
+ *                   trabajos:
+ *                     - { id: 10, titulo: 'Reparar eje', descripcion: 'Rectificado...', estado: 'ENTREGADO', prioridad: 'ALTA', semaforo: 'VERDE', fecha_inicio: '2025-04-27T00:00:00.000Z', fecha_estimada_fin: '2025-04-29T00:00:00.000Z', fecha_actualizacion: '2025-04-28T18:00:00.000Z', tiempo_estimado_sec: 72000, tiempo_real_sec: 65000, cliente_id: 5, responsable_id: 2, precio: 800, monto: 800, importe: 800, estado_pago: 'PAGADO', paymentStatus: 'PAGADO', notas: null, cliente: { id: 5, nombre: 'Cliente ABC', direccion: 'Calle 1', telefono: '7000' }, responsable: { id: 2, rol_tecnico: 'Soldador', usuario: { nombre: 'Juan' }, direccion: 'Av 2' } }
  */
 router.get('/semanal', authenticate, ctrl.semanal);
 
@@ -34,7 +56,7 @@ router.get('/semanal', authenticate, ctrl.semanal);
  *       - BearerAuth: []
  *     responses:
  *       '200':
- *         description: Reporte mensual con KPIs (SLA, tiempos, backlog, tops)
+ *         description: Reporte mensual con KPIs (SLA, tiempos, backlog, tops, ganancia)
  *         content:
  *           application/json:
  *             schema:

@@ -1,4 +1,5 @@
 ﻿import { Request, Response, NextFunction } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../prisma/client.js';
 import { success, fail } from '../utils/response.js';
 import { logger } from '../utils/logger.js';
@@ -7,8 +8,9 @@ import { transitionEstado } from '../services/PedidoWorkflow.js';
 import { computeSemaforoForPedido } from '../services/SemaforoService.js';
 
 // Common select for kanban cards to ensure consistency
-const kanbanCardSelect = {
+const kanbanCardSelect: Prisma.pedidosSelect = {
   id: true,
+  titulo: true,
   descripcion: true,
   prioridad: true,
   estado: true,
@@ -18,7 +20,11 @@ const kanbanCardSelect = {
   fecha_actualizacion: true,
   cliente: { select: { id: true, nombre: true, telefono: true } },
   responsable: { select: { id: true, usuario: { select: { id: true, nombre: true } } } },
-   asignaciones: { select: { origen: true, id: true }, orderBy: { id: 'desc' }, take: 1 },
+  asignaciones: {
+    select: { origen: true, id: true },
+    orderBy: { id: Prisma.SortOrder.desc },
+    take: 1,
+  },
 };
 
 /**
@@ -43,6 +49,7 @@ export const listarKanban = async (req: Request, res: Response, next: NextFuncti
       const searchQuery = {
         OR: [
           { descripcion: { contains: q as string, mode: 'insensitive' } },
+          { titulo: { contains: q as string, mode: 'insensitive' } },
           { cliente: { nombre: { contains: q as string, mode: 'insensitive' } } },
         ],
       };

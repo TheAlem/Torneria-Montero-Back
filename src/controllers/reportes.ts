@@ -4,6 +4,8 @@ import { success } from '../utils/response.js';
 
 type PedidoLite = {
   id: number;
+  titulo: string | null;
+  descripcion: string | null;
   estado: string;
   prioridad: string;
   semaforo: string | null;
@@ -12,10 +14,13 @@ type PedidoLite = {
   fecha_estimada_fin: Date | null;
   tiempo_estimado_sec: number | null;
   tiempo_real_sec: number | null;
-  cliente_id: number;
+  cliente_id: number | null;
   responsable_id: number | null;
-  cliente: { id: number; nombre: string } | null;
-  responsable: { id: number; usuario: { nombre: string | null } | null } | null;
+  precio: any;
+  pagado: boolean;
+  notas: string | null;
+  cliente: { id: number; nombre: string; direccion: string | null; telefono: string | null } | null;
+  responsable: { id: number; rol_tecnico: string | null; direccion: string | null; usuario: { nombre: string | null } | null } | null;
 };
 
 const countBy = (arr: any[], key: string) => {
@@ -36,6 +41,12 @@ const median = (arr: number[]) => {
 
 const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
 
+const toISO = (d: Date | null) => d ? new Date(d).toISOString() : null;
+const toNumber = (val: any) => {
+  const n = Number(val);
+  return Number.isFinite(n) ? n : null;
+};
+
 function buildReporte(periodo: 'semanal' | 'mensual', trabajos: PedidoLite[], rango: { from: Date; to: Date }) {
   const total = trabajos.length;
   const porEstado = countBy(trabajos, 'estado');
@@ -46,6 +57,14 @@ function buildReporte(periodo: 'semanal' | 'mensual', trabajos: PedidoLite[], ra
   const entregados = trabajos.filter(t => t.estado === 'ENTREGADO');
   const enProgreso = trabajos.filter(t => t.estado === 'EN_PROGRESO');
   const pendientes = trabajos.filter(t => t.estado === 'PENDIENTE');
+
+  // Ganancia estimada: suma de precios del periodo (entregados o pagados)
+  const gananciaTotal = trabajos.reduce((acc, t) => {
+    if (t.pagado || t.estado === 'ENTREGADO') {
+      return acc + (toNumber(t.precio) ?? 0);
+    }
+    return acc;
+  }, 0);
 
   const leadTimesSec = entregados
     .map(t => {
@@ -125,14 +144,15 @@ function buildReporte(periodo: 'semanal' | 'mensual', trabajos: PedidoLite[], ra
         : null;
       return {
         id: t.id,
+        titulo: t.titulo ?? null,
         cliente: t.cliente?.nombre ?? null,
         responsable: t.responsable?.usuario?.nombre ?? null,
         prioridad: t.prioridad,
         estado: t.estado,
         semaforo: t.semaforo,
-        fecha_inicio: t.fecha_inicio,
-        fecha_estimada_fin: t.fecha_estimada_fin,
-        fecha_entrega: t.fecha_actualizacion,
+        fecha_inicio: toISO(t.fecha_inicio),
+        fecha_estimada_fin: toISO(t.fecha_estimada_fin),
+        fecha_entrega: toISO(t.fecha_actualizacion),
         tiempo_estimado_sec: t.tiempo_estimado_sec,
         tiempo_real_sec: t.tiempo_real_sec,
         atraso_sec: atrasoSec,
@@ -141,10 +161,52 @@ function buildReporte(periodo: 'semanal' | 'mensual', trabajos: PedidoLite[], ra
 
   const windowDays = Math.max(1, Math.ceil((rango.to.getTime() - rango.from.getTime()) / (24 * 3600 * 1000)));
 
+  const trabajosPayload = trabajos.map(t => {
+    const price = toNumber(t.precio);
+    const estadoPago = t.pagado ? 'PAGADO' : 'PENDIENTE';
+    return {
+      id: t.id,
+      titulo: t.titulo ?? '',
+      descripcion: (t as any).descripcion ?? '',
+      estado: t.estado,
+      prioridad: t.prioridad,
+      semaforo: t.semaforo,
+      fecha_inicio: toISO(t.fecha_inicio),
+      fecha_estimada_fin: toISO(t.fecha_estimada_fin),
+      fecha_actualizacion: toISO(t.fecha_actualizacion),
+      tiempo_estimado_sec: t.tiempo_estimado_sec,
+      tiempo_real_sec: t.tiempo_real_sec,
+      cliente_id: t.cliente_id,
+      responsable_id: t.responsable_id,
+      precio: price,
+      monto: price,
+      importe: price,
+      estado_pago: estadoPago,
+      paymentStatus: estadoPago,
+      notas: t.notas ?? null,
+      cliente: t.cliente
+        ? {
+          id: t.cliente.id,
+          nombre: t.cliente.nombre,
+          direccion: t.cliente.direccion,
+          telefono: t.cliente.telefono,
+        }
+        : { id: null, nombre: null, direccion: null, telefono: null } as any,
+      responsable: t.responsable
+        ? {
+          id: t.responsable.id,
+          rol_tecnico: t.responsable.rol_tecnico,
+          direccion: t.responsable.direccion,
+          usuario: { nombre: t.responsable.usuario?.nombre ?? null },
+        }
+        : { id: null, rol_tecnico: null, direccion: null, usuario: { nombre: null } },
+    };
+  });
+
   return {
     periodo,
-    fechaGeneracion: new Date(),
-    rango,
+    fechaGeneracion: new Date().toISOString(),
+    rango: { from: toISO(rango.from), to: toISO(rango.to) },
     datos: {
       total,
       porEstado,
@@ -172,7 +234,8 @@ function buildReporte(periodo: 'semanal' | 'mensual', trabajos: PedidoLite[], ra
       topResponsables,
       topClientes,
       entregasRecientes,
-      trabajos,
+      trabajos: trabajosPayload,
+      gananciaTotal,
     },
   };
 }
@@ -185,6 +248,8 @@ export const semanal = async (req: Request, res: Response, next: NextFunction) =
       where: { fecha_inicio: { gte: from } },
       select: {
         id: true,
+        titulo: true,
+        descripcion: true,
         estado: true,
         prioridad: true,
         semaforo: true,
@@ -195,8 +260,11 @@ export const semanal = async (req: Request, res: Response, next: NextFunction) =
         tiempo_real_sec: true,
         cliente_id: true,
         responsable_id: true,
-        cliente: { select: { id: true, nombre: true } },
-        responsable: { select: { id: true, usuario: { select: { nombre: true } } } },
+        precio: true,
+        pagado: true,
+        notas: true,
+        cliente: { select: { id: true, nombre: true, direccion: true, telefono: true } },
+        responsable: { select: { id: true, rol_tecnico: true, direccion: true, usuario: { select: { nombre: true } } } },
       },
     }) as PedidoLite[];
     const reporte = buildReporte('semanal', trabajos, { from, to: now });
@@ -212,6 +280,8 @@ export const mensual = async (req: Request, res: Response, next: NextFunction) =
       where: { fecha_inicio: { gte: from } },
       select: {
         id: true,
+        titulo: true,
+        descripcion: true,
         estado: true,
         prioridad: true,
         semaforo: true,
@@ -222,8 +292,11 @@ export const mensual = async (req: Request, res: Response, next: NextFunction) =
         tiempo_real_sec: true,
         cliente_id: true,
         responsable_id: true,
-        cliente: { select: { id: true, nombre: true } },
-        responsable: { select: { id: true, usuario: { select: { nombre: true } } } },
+        precio: true,
+        pagado: true,
+        notas: true,
+        cliente: { select: { id: true, nombre: true, direccion: true, telefono: true } },
+        responsable: { select: { id: true, rol_tecnico: true, direccion: true, usuario: { select: { nombre: true } } } },
       },
     }) as PedidoLite[];
     const reporte = buildReporte('mensual', trabajos, { from, to: now });

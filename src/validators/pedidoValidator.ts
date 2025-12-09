@@ -9,6 +9,7 @@ const ClienteInlineSchema = z.object({
 });
 
 export const CreatePedidoSchema = z.object({
+  titulo: z.string().min(1),
   descripcion: z.string().min(1),
   prioridad: z.enum(['BAJA', 'MEDIA', 'ALTA']).default('MEDIA'),
   cliente_id: z.number().int().optional(),
@@ -25,6 +26,7 @@ export const CreatePedidoSchema = z.object({
 export type CreatePedidoBody = z.infer<typeof CreatePedidoSchema>;
 
 export const UpdatePedidoSchema = z.object({
+  titulo: z.string().min(1).optional(),
   descripcion: z.string().min(1).optional(),
   prioridad: z.enum(['BAJA', 'MEDIA', 'ALTA']).optional(),
   precio: z.number().positive().nullable().optional(),
