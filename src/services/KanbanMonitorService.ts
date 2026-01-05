@@ -2,14 +2,22 @@ import { prisma } from '../prisma/client.js';
 import NotificationService from './notificationService.js';
 import { predictTiempoSec } from './MLService.js';
 import { logger } from '../utils/logger.js';
+import { envFlag } from '../utils/env.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import { applyAndEmitSemaforo } from './SemaforoService.js';
 import { suggestCandidates, maybeReassignIfEnabled, autoAssignIfEnabled } from './AssignmentService.js';
 import * as ClientNotificationService from './ClientNotificationService.js';
-export async function evaluateAndNotify(options?: { autoReassign?: boolean; autoAssignPending?: boolean }) {
+
+type EvaluateOptions = { autoReassign?: boolean; autoAssignPending?: boolean; pedidoIds?: number[] };
+
+export async function evaluateAndNotify(options?: EvaluateOptions) {
   const now = new Date();
+  const ids = Array.isArray(options?.pedidoIds) ? options!.pedidoIds : [];
+  const pedidoIds = Array.from(new Set(ids.map(id => Number(id)))).filter(id => Number.isFinite(id) && id > 0);
+  const where: any = { eliminado: false, estado: { in: ['PENDIENTE','ASIGNADO','EN_PROGRESO','QA'] } };
+  if (pedidoIds.length) where.id = { in: pedidoIds };
   const activos = await prisma.pedidos.findMany({
-    where: { eliminado: false, estado: { in: ['PENDIENTE','ASIGNADO','EN_PROGRESO','QA'] } },
+    where,
     include: { cliente: true, responsable: true }
   });
   const affected: any[] = [];
@@ -118,3 +126,15 @@ export async function evaluateAndNotify(options?: { autoReassign?: boolean; auto
   return { checked: activos.length, affected };
 }
 
+export function scheduleEvaluatePedidos(pedidoIds: number[] | number, options?: Omit<EvaluateOptions, 'pedidoIds'>) {
+  if (!envFlag('KANBAN_MONITOR_ENABLED', false)) return;
+  if (!envFlag('KANBAN_EVENT_EVAL_ENABLED', true)) return;
+  const ids = Array.isArray(pedidoIds) ? pedidoIds : [pedidoIds];
+  const uniqueIds = Array.from(new Set(ids.map(id => Number(id)))).filter(id => Number.isFinite(id) && id > 0);
+  if (!uniqueIds.length) return;
+  setTimeout(() => {
+    evaluateAndNotify({ ...(options || {}), pedidoIds: uniqueIds }).catch((err) => {
+      logger.error({ msg: '[KanbanMonitor] evaluate error', err: (err as any)?.message, pedidoIds: uniqueIds });
+    });
+  }, 0);
+}

@@ -176,10 +176,8 @@ export async function buildCandidatesForPedido(
   const parsed = parseDescripcion(pedido.descripcion);
   const tags = [
     ...(parsed.materiales.acero ? ['acero'] : []),
-    ...(parsed.materiales.aluminio ? ['aluminio'] : []),
     ...(parsed.materiales.bronce ? ['bronce'] : []),
     ...(parsed.materiales.inox ? ['inox'] : []),
-    ...(parsed.materiales.plastico ? ['plastico'] : []),
     ...(parsed.procesos.torneado ? ['torneado'] : []),
     ...(parsed.procesos.fresado ? ['fresado'] : []),
     ...(parsed.procesos.roscado ? ['roscado'] : []),

@@ -8,6 +8,7 @@ import RealtimeService from '../realtime/RealtimeService.js';
 import { resolveClienteIdentity } from '../services/ClienteIdentityService.js';
 import * as ClientNotificationService from '../services/ClientNotificationService.js';
 import { recalcPedidoEstimate } from '../services/MLService.js';
+import { scheduleEvaluatePedidos } from '../services/KanbanMonitorService.js';
 
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -130,6 +131,13 @@ export const actualizar = async (req: Request, res: Response, next: NextFunction
       try {
         await recalcPedidoEstimate(id, { trabajadorId: pedido.responsable_id ?? null, updateFechaEstimada: !touchedFechaEstimada });
       } catch {}
+    }
+    const shouldEvaluate = needsRecalc
+      || typeof body.estado !== 'undefined'
+      || typeof body.responsable_id !== 'undefined'
+      || typeof body.fecha_estimada_fin !== 'undefined';
+    if (shouldEvaluate) {
+      scheduleEvaluatePedidos(id);
     }
     try {
       const clienteId = pedido?.cliente?.id;

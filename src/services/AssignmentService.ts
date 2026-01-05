@@ -3,6 +3,7 @@ import { recalcPedidoEstimate } from './MLService.js';
 import { applyAndEmitSemaforo } from './SemaforoService.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import { logger } from '../utils/logger.js';
+import { envFlag } from '../utils/env.js';
 import { buildCandidatesForPedido } from './HeuristicsService.js';
 
 type Candidate = {
@@ -45,7 +46,7 @@ export async function suggestCandidates(pedidoId: number): Promise<Candidate[]> 
 }
 
 export async function autoAssignIfEnabled(pedidoId: number): Promise<boolean> {
-  if (String(process.env.AUTO_ASSIGN_ENABLED ?? 'false') !== 'true') return false;
+  if (!envFlag('AUTO_ASSIGN_ENABLED', false)) return false;
   return autoAssignForced(pedidoId);
 }
 
@@ -65,7 +66,7 @@ export async function autoAssignForced(pedidoId: number): Promise<boolean> {
 
 export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'AMARILLO'|'ROJO', options?: { minScoreDelta?: number }) {
   if (color !== 'ROJO') return false;
-  const autoReassignEnabled = String(process.env.AUTO_REASSIGN_ENABLED ?? 'true').toLowerCase() === 'true';
+  const autoReassignEnabled = envFlag('AUTO_REASSIGN_ENABLED', true);
   if (!autoReassignEnabled) {
     try { RealtimeService.emitToOperators('assignment:auto-keep', { pedidoId, reason: 'auto_reassign_disabled', ts: Date.now() }); } catch {}
     return false;
@@ -112,7 +113,7 @@ export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'A
     ? options!.minScoreDelta
     : Number(process.env.AUTO_REASSIGN_MIN_DELTA ?? 0.1);
   const deltaScore = currentCandidate ? target.score - currentCandidate.score : target.score;
-  const forceOnDelay = String(process.env.AUTO_REASSIGN_FORCE_ON_DELAY ?? 'true').toLowerCase() === 'true';
+  const forceOnDelay = envFlag('AUTO_REASSIGN_FORCE_ON_DELAY', true);
   const maxDrop = Number(process.env.AUTO_REASSIGN_MAX_SCORE_DROP ?? 0.05); // límite para no saltar a alguien claramente peor
   const allowForce = forceOnDelay && currentId !== null && target.trabajadorId !== currentId && deltaScore >= -maxDrop;
 

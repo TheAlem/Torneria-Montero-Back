@@ -11,7 +11,7 @@ export type FeatureMeta = {
 
 // --- Text parsing helpers to extract simple, explainable signals ---
 export type ParsedDescripcion = {
-  materiales: Record<'acero'|'aluminio'|'bronce'|'inox'|'plastico', number>;
+  materiales: Record<'acero'|'bronce'|'inox'| 'Fundido', number>;
   procesos: Record<'torneado'|'fresado'|'roscado'|'taladrado'|'soldadura'|'pulido', number>;
   flags: { has_rosca: number; has_tolerancia: number; multi_piezas: number };
   diamBucket: [number, number, number, number];
@@ -45,10 +45,8 @@ export function parseDescripcion(descRaw?: string | null): ParsedDescripcion {
   const desc = stripAccents(String(descRaw || '').toLowerCase());
   const materiales = {
     acero: +textHas(desc, ['acero']),
-    aluminio: +textHas(desc, ['alumin', 'alu ']),
     bronce: +textHas(desc, ['bronc']),
     inox: +textHas(desc, ['inox', 'acero inox']),
-    plastico: +textHas(desc, ['plast', 'teflon', 'nylon', 'delrin']),
   } as const;
   const procesos = {
     torneado: +textHas(desc, ['torne', 'torno', 'torn ', 'torni', 'tornear', 'torner', 'torn.']),
@@ -182,8 +180,8 @@ export function buildBaseAndExtraFeatures(sample: ExtendedSample): { xBase: Feat
     const flags = parsed.flags;
     const { diamBucket, textBucket } = parsed;
     // Materials
-    extraNames.push('mat_acero','mat_aluminio','mat_bronce','mat_inox','mat_plastico');
-    extraX.push(mats.acero, mats.aluminio, mats.bronce, mats.inox, mats.plastico);
+    extraNames.push('mat_acero','mat_bronce','mat_inox');
+    extraX.push(mats.acero, mats.bronce, mats.inox);
     // Processes
     extraNames.push('proc_torneado','proc_fresado','proc_roscado','proc_taladrado','proc_soldadura','proc_pulido');
     extraX.push(procs.torneado, procs.fresado, procs.roscado, procs.taladrado, procs.soldadura, procs.pulido);
@@ -203,7 +201,6 @@ export function buildBaseAndExtraFeatures(sample: ExtendedSample): { xBase: Feat
     // Tags for skill overlap
     tags = [
       ...(mats.acero ? ['acero'] : []),
-      ...(mats.aluminio ? ['aluminio'] : []),
       ...(mats.bronce ? ['bronce'] : []),
       ...(mats.inox ? ['inox'] : []),
       ...(procs.torneado ? ['torneado'] : []),
@@ -340,10 +337,8 @@ export function featuresForPedido(
     const { diamBucket, textBucket, domain: d } = parsed;
     Object.assign(map, {
       'mat_acero': mats.acero,
-      'mat_aluminio': mats.aluminio,
       'mat_bronce': mats.bronce,
       'mat_inox': mats.inox,
-      'mat_plastico': mats.plastico,
       'proc_torneado': procs.torneado,
       'proc_fresado': procs.fresado,
       'proc_roscado': procs.roscado,
@@ -375,7 +370,6 @@ export function featuresForPedido(
     });
     tags = [
       ...(mats.acero ? ['acero'] : []),
-      ...(mats.aluminio ? ['aluminio'] : []),
       ...(mats.bronce ? ['bronce'] : []),
       ...(mats.inox ? ['inox'] : []),
       ...(procs.torneado ? ['torneado'] : []),
@@ -405,4 +399,3 @@ export function featuresForPedido(
   const names = Array.isArray(meta?.names) && meta.names.length ? meta.names : ['bias','prio_ALTA','prio_MEDIA','precio'];
   return names.map(n => (n in map ? map[n] : 0));
 }
-

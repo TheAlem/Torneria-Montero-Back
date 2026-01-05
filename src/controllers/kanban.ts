@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../prisma/client.js';
 import { success, fail } from '../utils/response.js';
 import { logger } from '../utils/logger.js';
+import { envFlag, parseEnvBool } from '../utils/env.js';
 import { evaluateAndNotify } from '../services/KanbanMonitorService.js';
 import { transitionEstado } from '../services/PedidoWorkflow.js';
 import { computeSemaforoForPedido } from '../services/SemaforoService.js';
@@ -119,6 +120,23 @@ export const cambiarEstado = async (req: Request, res: Response, next: NextFunct
  */
 export const evaluarSemaforo = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const monitorEnabled = envFlag('KANBAN_MONITOR_ENABLED', false);
+    const force = parseEnvBool(typeof req.query?.force === 'string' ? req.query.force : undefined, false);
+    if (monitorEnabled && !force) {
+      const responseData = {
+        processed: 0,
+        delayed: 0,
+        checked: 0,
+        affectedCount: 0,
+        total: 0,
+        totalChecked: 0,
+        requiresAttention: 0,
+        affected: [],
+        skipped: true,
+        reason: 'monitor_enabled',
+      };
+      return success(res, responseData, 200, 'Evaluación omitida (monitor activo)');
+    }
     // By default evaluamos con auto-reasignación activa; se puede forzar modo sugerencia con autoReassign=false.
     const autoReassign = String((req.query?.autoReassign as string) || 'true').toLowerCase() !== 'false';
     const result = await evaluateAndNotify({ autoReassign });

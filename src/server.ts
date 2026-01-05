@@ -2,6 +2,7 @@ import { logger } from './utils/logger.js';
 import dotenv from 'dotenv';
 import os from 'os';
 import { prisma } from './prisma/client.js';
+import { envFlag } from './utils/env.js';
 dotenv.config();
 
 // When running via ts-node/esm import the compiled JS path
@@ -33,19 +34,24 @@ app.listen(PORT, HOST, async () => {
   } catch (e) {
     logger.error({ msg: 'Prisma connect failed', err: (e as any)?.message });
   }
-  const enabled = String(process.env.KANBAN_MONITOR_ENABLED || 'false').toLowerCase() === 'true';
-  const everySec = Number(process.env.KANBAN_MONITOR_INTERVAL_SEC || 300);
+  const enabled = envFlag('KANBAN_MONITOR_ENABLED', false);
+  const everySecRaw = Number(process.env.KANBAN_MONITOR_INTERVAL_SEC || 300);
+  const intervalSec = Math.max(60, Number.isFinite(everySecRaw) ? everySecRaw : 300);
   if (enabled) {
     import('./services/KanbanMonitorService.js').then(({ evaluateAndNotify }) => {
-      setInterval(async () => {
+      const run = async () => {
         try { await evaluateAndNotify(); } catch (e) { logger.error('Kanban monitor error', e as any); }
-      }, Math.max(60, everySec) * 1000);
-      logger.info(`Kanban monitor enabled. Interval=${everySec}s`);
+      };
+      run();
+      setInterval(() => {
+        run();
+      }, intervalSec * 1000);
+      logger.info(`Kanban monitor enabled. Interval=${intervalSec}s`);
     });
   }
 
   // Nightly ML training (auto aprendizaje por trabajador/tiempos)
-  const mlEnabled = String(process.env.ML_TRAIN_ENABLED || 'false').toLowerCase() === 'true';
+  const mlEnabled = envFlag('ML_TRAIN_ENABLED', false);
   if (mlEnabled) {
     const parseHour = (value?: string) => {
       const num = Number(value);
