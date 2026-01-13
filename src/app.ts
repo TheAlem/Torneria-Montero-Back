@@ -21,8 +21,9 @@ import { success } from './utils/response.js';
 const app = express();
 
 const corsOrigins = (process.env.CORS_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+const corsAllowAny = corsOrigins.includes('*');
 app.use(cors({
-  origin: corsOrigins.length ? corsOrigins : true,
+  origin: corsAllowAny ? true : (corsOrigins.length ? corsOrigins : true),
   credentials: true,
   methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
   allowedHeaders: ['Content-Type','Authorization','x-api-key']
