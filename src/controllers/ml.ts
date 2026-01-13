@@ -17,6 +17,7 @@ export const train = async (req: Request, res: Response, next: NextFunction) => 
         mae_sec: typeof result.mae === 'number' ? Math.round(result.mae) : null,
         mae_train_sec: typeof (result as any).mae_train === 'number' ? Math.round((result as any).mae_train) : null,
         mae_valid_sec: typeof (result as any).mae_valid === 'number' ? Math.round((result as any).mae_valid) : (typeof result.mae === 'number' ? Math.round(result.mae) : null),
+        mape_valid: typeof (result as any).mape_valid === 'number' ? Number((result as any).mape_valid.toFixed(4)) : null,
         modelPath: result.path,
         version: result.model.version,
       },

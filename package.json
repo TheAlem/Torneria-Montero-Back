@@ -11,7 +11,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "openapi:generate": "tsx generate-openapi.ts",
-    "ml:gen-csv": "tsx scripts/generate_train.ts"
+    "ml:gen-csv": "tsx scripts/generate_train.ts",
+    "test": "node --test --import tsx"
   },
   "keywords": [],
   "author": "",

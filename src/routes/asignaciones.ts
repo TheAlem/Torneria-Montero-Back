@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import * as ctrl from '../controllers/asignaciones.js';
 import { authenticate, requireRole } from '../middlewares/authMiddleware.js';
-import { suggestCandidates, autoAssignForced } from '../services/AssignmentService.js';
+import { suggestAssignmentBundle, autoAssignForced } from '../services/AssignmentService.js';
 import { prisma } from '../prisma/client.js';
 import { success as ok, fail } from '../utils/response.js';
 
@@ -52,6 +52,51 @@ const router = Router();
  *           type: boolean
  *         score:
  *           type: number
+ *         razones:
+ *           type: array
+ *           items:
+ *             type: string
+ *         hardConstraints:
+ *           type: array
+ *           items:
+ *             type: string
+ *         tiempo_estimado_sec:
+ *           type: number
+ *           nullable: true
+ *         tiempo_estimado_base_sec:
+ *           type: number
+ *           nullable: true
+ *         tiempo_estimado_rango:
+ *           type: object
+ *           nullable: true
+ *           properties:
+ *             minSec: { type: number }
+ *             maxSec: { type: number }
+ *             bufferPct: { type: number }
+ *     SupportCandidate:
+ *       type: object
+ *       properties:
+ *         trabajadorId:
+ *           type: integer
+ *         nombre:
+ *           type: string
+ *           nullable: true
+ *         email:
+ *           type: string
+ *           nullable: true
+ *         skills:
+ *           type: array
+ *           items:
+ *             type: string
+ *         rol_tecnico:
+ *           type: string
+ *           nullable: true
+ *         tareas_generales:
+ *           type: array
+ *           items:
+ *             type: string
+ *         motivo:
+ *           type: string
  *     AutoAssignResponse:
  *       type: object
  *       properties:
@@ -148,15 +193,19 @@ router.get('/', authenticate, ctrl.listar);
  *                       type: array
  *                       items:
  *                         $ref: '#/components/schemas/Candidate'
- */
+ *                     apoyo_manual:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/SupportCandidate'
+*/
 router.get('/suggest', authenticate, requireRole('admin','tornero'), async (req, res, next) => {
   try {
     const pedidoId = Number(req.query?.pedidoId);
     if (!Number.isFinite(pedidoId)) return fail(res, 'VALIDATION_ERROR', 'pedidoId inválido', 422);
     const exists = await prisma.pedidos.findUnique({ where: { id: pedidoId }, select: { id: true } });
     if (!exists) return fail(res, 'NOT_FOUND', 'Pedido no encontrado', 404);
-    const candidates = await suggestCandidates(pedidoId);
-    return ok(res, { candidates });
+    const { candidates, apoyoManual } = await suggestAssignmentBundle(pedidoId);
+    return ok(res, { candidates, apoyo_manual: apoyoManual });
   } catch (err) { next(err); }
 });
 

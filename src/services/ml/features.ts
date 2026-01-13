@@ -11,7 +11,20 @@ export type FeatureMeta = {
 
 // --- Text parsing helpers to extract simple, explainable signals ---
 export type ParsedDescripcion = {
-  materiales: Record<'acero'|'bronce'|'inox'| 'Fundido', number>;
+  materiales: Record<
+    'acero' |
+    'acero_1045' |
+    'bronce' |
+    'bronce_fundido' |
+    'bronce_laminado' |
+    'bronce_fosforado' |
+    'inox' |
+    'fundido' |
+    'teflon' |
+    'nylon' |
+    'aluminio',
+    number
+  >;
   procesos: Record<'torneado'|'fresado'|'roscado'|'taladrado'|'soldadura'|'pulido', number>;
   flags: { has_rosca: number; has_tolerancia: number; multi_piezas: number };
   diamBucket: [number, number, number, number];
@@ -19,7 +32,8 @@ export type ParsedDescripcion = {
   // domain-specific tags common in workshop jobs
   domain: Record<
     'rodamiento' | 'palier' | 'buje' | 'bandeja' | 'tren_delantero' |
-    'engranaje' | 'corona' | 'rellenado' | 'recargue' | 'prensa' | 'alineado' | 'torneado_base',
+    'engranaje' | 'corona' | 'rellenado' | 'recargue' | 'prensa' | 'alineado' | 'torneado_base' |
+    'amolado' | 'esmerilado' | 'corte' | 'taladro_simple',
     number
   >;
 };
@@ -43,18 +57,23 @@ function textHas(text: string, substrings: string[]) {
 
 export function parseDescripcion(descRaw?: string | null): ParsedDescripcion {
   const desc = stripAccents(String(descRaw || '').toLowerCase());
+  const is1045 = /\b(1045|acero\s*1045|hierro\s*1045)\b/.test(desc) || (desc.includes('1045') && desc.includes('maquinable'));
+  const hasBronce = textHas(desc, ['bronc']);
+  const isBronceFosforado = textHas(desc, ['bronce fosfor', 'fosforoso', 'fosforado']);
+  const isBronceLaminado = textHas(desc, ['bronce laminad', 'laminado']) && hasBronce;
+  const isBronceFundido = textHas(desc, ['bronce fundid', 'fundido']) && hasBronce;
   const materiales = {
-    acero: +textHas(desc, ['acero']),
-    bronce: +textHas(desc, ['bronc']),
+    acero: +textHas(desc, ['acero']) || +is1045,
+    acero_1045: +is1045,
+    bronce: +hasBronce,
+    bronce_fundido: +isBronceFundido,
+    bronce_laminado: +isBronceLaminado,
+    bronce_fosforado: +isBronceFosforado,
     inox: +textHas(desc, ['inox', 'acero inox']),
-  } as const;
-  const procesos = {
-    torneado: +textHas(desc, ['torne', 'torno', 'torn ', 'torni', 'tornear', 'torner', 'torn.']),
-    fresado: +textHas(desc, ['fresa', 'fresad', 'fresn']),
-    roscado: +(textHas(desc, ['rosca', 'rosc', 'hilo']) || /\bm\d{1,2}\b/.test(desc)),
-    taladrado: +textHas(desc, ['taladr', 'perfor', 'agujer', 'mea', 'broca']),
-    soldadura: +textHas(desc, ['soldad']),
-    pulido: +textHas(desc, ['pulid', 'lij', 'acabado']),
+    fundido: +textHas(desc, ['fierro fundido', 'fundido comun', 'fundido común', 'fundicion', 'fundición']),
+    teflon: +textHas(desc, ['teflon', 'ptfe']),
+    nylon: +textHas(desc, ['nylon', 'nilon', 'nailon']),
+    aluminio: +textHas(desc, ['aluminio', 'alu']),
   } as const;
   const domain = {
     rodamiento: +textHas(desc, ['rodamient']),
@@ -69,6 +88,18 @@ export function parseDescripcion(descRaw?: string | null): ParsedDescripcion {
     prensa: +textHas(desc, ['prensa']),
     alineado: +textHas(desc, ['alineado', 'alinear', 'alineac']),
     torneado_base: +textHas(desc, ['tornear base', 'torneado base', 'tornear la base', 'base de asiento']),
+    amolado: +textHas(desc, ['amolad', 'amoladora', 'desbaste']),
+    esmerilado: +textHas(desc, ['esmeril', 'esmerilad']),
+    corte: +textHas(desc, ['corte', 'cortadora']),
+    taladro_simple: +textHas(desc, ['taladro simple', 'taladro', 'mecha', 'mechas']),
+  } as const;
+  const procesos = {
+    torneado: +textHas(desc, ['torne', 'torno', 'torn ', 'torni', 'tornear', 'torner', 'torn.']),
+    fresado: +textHas(desc, ['fresa', 'fresad', 'fresn']),
+    roscado: +(textHas(desc, ['rosca', 'rosc', 'hilo']) || /\bm\d{1,2}\b/.test(desc)),
+    taladrado: +textHas(desc, ['taladr', 'perfor', 'agujer', 'mea', 'broca']),
+    soldadura: +(textHas(desc, ['soldad']) || domain.recargue || domain.rellenado),
+    pulido: +textHas(desc, ['pulid', 'lij', 'acabado']),
   } as const;
   const hasRosca = procesos.roscado ? 1 : (/\bm\d{1,2}\b/.test(desc) ? 1 : 0);
   const hasTol = desc.includes('±') || desc.includes('+/-') || /\bh\d\b/.test(desc) || /\bit\d\b/.test(desc) ? 1 : 0;
@@ -180,15 +211,73 @@ export function buildBaseAndExtraFeatures(sample: ExtendedSample): { xBase: Feat
     const flags = parsed.flags;
     const { diamBucket, textBucket } = parsed;
     // Materials
-    extraNames.push('mat_acero','mat_bronce','mat_inox');
-    extraX.push(mats.acero, mats.bronce, mats.inox);
+    extraNames.push(
+      'mat_acero',
+      'mat_acero_1045',
+      'mat_bronce',
+      'mat_bronce_fundido',
+      'mat_bronce_laminado',
+      'mat_bronce_fosforado',
+      'mat_inox',
+      'mat_fundido',
+      'mat_teflon',
+      'mat_nylon',
+      'mat_aluminio'
+    );
+    extraX.push(
+      mats.acero,
+      mats.acero_1045,
+      mats.bronce,
+      mats.bronce_fundido,
+      mats.bronce_laminado,
+      mats.bronce_fosforado,
+      mats.inox,
+      mats.fundido,
+      mats.teflon,
+      mats.nylon,
+      mats.aluminio
+    );
     // Processes
     extraNames.push('proc_torneado','proc_fresado','proc_roscado','proc_taladrado','proc_soldadura','proc_pulido');
     extraX.push(procs.torneado, procs.fresado, procs.roscado, procs.taladrado, procs.soldadura, procs.pulido);
     // Domain tags
     const d = parsed.domain;
-    extraNames.push('tag_rodamiento','tag_palier','tag_buje','tag_bandeja','tag_tren_delantero','tag_engranaje','tag_corona','tag_rellenado','tag_recargue','tag_prensa','tag_alineado','tag_torneado_base');
-    extraX.push(d.rodamiento,d.palier,d.buje,d.bandeja,d.tren_delantero,d.engranaje,d.corona,d.rellenado,d.recargue,d.prensa,d.alineado,d.torneado_base);
+    extraNames.push(
+      'tag_rodamiento',
+      'tag_palier',
+      'tag_buje',
+      'tag_bandeja',
+      'tag_tren_delantero',
+      'tag_engranaje',
+      'tag_corona',
+      'tag_rellenado',
+      'tag_recargue',
+      'tag_prensa',
+      'tag_alineado',
+      'tag_torneado_base',
+      'tag_amolado',
+      'tag_esmerilado',
+      'tag_corte',
+      'tag_taladro_simple'
+    );
+    extraX.push(
+      d.rodamiento,
+      d.palier,
+      d.buje,
+      d.bandeja,
+      d.tren_delantero,
+      d.engranaje,
+      d.corona,
+      d.rellenado,
+      d.recargue,
+      d.prensa,
+      d.alineado,
+      d.torneado_base,
+      d.amolado,
+      d.esmerilado,
+      d.corte,
+      d.taladro_simple
+    );
     // Flags
     extraNames.push('has_rosca','has_tolerancia','multi_piezas');
     extraX.push(flags.has_rosca, flags.has_tolerancia, flags.multi_piezas);
@@ -201,8 +290,16 @@ export function buildBaseAndExtraFeatures(sample: ExtendedSample): { xBase: Feat
     // Tags for skill overlap
     tags = [
       ...(mats.acero ? ['acero'] : []),
+      ...(mats.acero_1045 ? ['acero_1045'] : []),
       ...(mats.bronce ? ['bronce'] : []),
+      ...(mats.bronce_fundido ? ['bronce_fundido'] : []),
+      ...(mats.bronce_laminado ? ['bronce_laminado'] : []),
+      ...(mats.bronce_fosforado ? ['bronce_fosforado'] : []),
       ...(mats.inox ? ['inox'] : []),
+      ...(mats.fundido ? ['fundido'] : []),
+      ...(mats.teflon ? ['teflon'] : []),
+      ...(mats.nylon ? ['nylon'] : []),
+      ...(mats.aluminio ? ['aluminio'] : []),
       ...(procs.torneado ? ['torneado'] : []),
       ...(procs.fresado ? ['fresado'] : []),
       ...(procs.roscado ? ['roscado'] : []),
@@ -221,6 +318,10 @@ export function buildBaseAndExtraFeatures(sample: ExtendedSample): { xBase: Feat
       ...(d.prensa ? ['prensa'] : []),
       ...(d.alineado ? ['alineado'] : []),
       ...(d.torneado_base ? ['torneado_base'] : []),
+      ...(d.amolado ? ['amolado'] : []),
+      ...(d.esmerilado ? ['esmerilado'] : []),
+      ...(d.corte ? ['corte'] : []),
+      ...(d.taladro_simple ? ['taladro_simple'] : []),
     ];
   }
 
@@ -337,8 +438,16 @@ export function featuresForPedido(
     const { diamBucket, textBucket, domain: d } = parsed;
     Object.assign(map, {
       'mat_acero': mats.acero,
+      'mat_acero_1045': mats.acero_1045,
       'mat_bronce': mats.bronce,
+      'mat_bronce_fundido': mats.bronce_fundido,
+      'mat_bronce_laminado': mats.bronce_laminado,
+      'mat_bronce_fosforado': mats.bronce_fosforado,
       'mat_inox': mats.inox,
+      'mat_fundido': mats.fundido,
+      'mat_teflon': mats.teflon,
+      'mat_nylon': mats.nylon,
+      'mat_aluminio': mats.aluminio,
       'proc_torneado': procs.torneado,
       'proc_fresado': procs.fresado,
       'proc_roscado': procs.roscado,
@@ -357,6 +466,10 @@ export function featuresForPedido(
       'tag_prensa': d.prensa,
       'tag_alineado': d.alineado,
       'tag_torneado_base': d.torneado_base,
+      'tag_amolado': d.amolado,
+      'tag_esmerilado': d.esmerilado,
+      'tag_corte': d.corte,
+      'tag_taladro_simple': d.taladro_simple,
       'has_rosca': flags.has_rosca,
       'has_tolerancia': flags.has_tolerancia,
       'multi_piezas': flags.multi_piezas,
@@ -370,14 +483,38 @@ export function featuresForPedido(
     });
     tags = [
       ...(mats.acero ? ['acero'] : []),
+      ...(mats.acero_1045 ? ['acero_1045'] : []),
       ...(mats.bronce ? ['bronce'] : []),
+      ...(mats.bronce_fundido ? ['bronce_fundido'] : []),
+      ...(mats.bronce_laminado ? ['bronce_laminado'] : []),
+      ...(mats.bronce_fosforado ? ['bronce_fosforado'] : []),
       ...(mats.inox ? ['inox'] : []),
+      ...(mats.fundido ? ['fundido'] : []),
+      ...(mats.teflon ? ['teflon'] : []),
+      ...(mats.nylon ? ['nylon'] : []),
+      ...(mats.aluminio ? ['aluminio'] : []),
       ...(procs.torneado ? ['torneado'] : []),
       ...(procs.fresado ? ['fresado'] : []),
       ...(procs.roscado ? ['roscado'] : []),
       ...(procs.taladrado ? ['taladrado'] : []),
       ...(procs.soldadura ? ['soldadura'] : []),
       ...(procs.pulido ? ['pulido'] : []),
+      ...(d.rodamiento ? ['rodamiento'] : []),
+      ...(d.palier ? ['palier'] : []),
+      ...(d.buje ? ['buje'] : []),
+      ...(d.bandeja ? ['bandeja'] : []),
+      ...(d.tren_delantero ? ['tren_delantero'] : []),
+      ...(d.engranaje ? ['engranaje'] : []),
+      ...(d.corona ? ['corona'] : []),
+      ...(d.rellenado ? ['rellenado'] : []),
+      ...(d.recargue ? ['recargue'] : []),
+      ...(d.prensa ? ['prensa'] : []),
+      ...(d.alineado ? ['alineado'] : []),
+      ...(d.torneado_base ? ['torneado_base'] : []),
+      ...(d.amolado ? ['amolado'] : []),
+      ...(d.esmerilado ? ['esmerilado'] : []),
+      ...(d.corte ? ['corte'] : []),
+      ...(d.taladro_simple ? ['taladro_simple'] : []),
     ];
   }
   if (useSkills || useWorker) {
@@ -398,4 +535,13 @@ export function featuresForPedido(
 
   const names = Array.isArray(meta?.names) && meta.names.length ? meta.names : ['bias','prio_ALTA','prio_MEDIA','precio'];
   return names.map(n => (n in map ? map[n] : 0));
+}
+
+export function computeComplexityScore(parsed: ParsedDescripcion): number {
+  const materialCount = Object.values(parsed.materiales).reduce((acc, v) => acc + (v ? 1 : 0), 0);
+  const processCount = Object.values(parsed.procesos).reduce((acc, v) => acc + (v ? 1 : 0), 0);
+  const domainCount = Object.values(parsed.domain).reduce((acc, v) => acc + (v ? 1 : 0), 0);
+  const flagsScore = parsed.flags.has_rosca + parsed.flags.has_tolerancia + parsed.flags.multi_piezas;
+  const raw = (0.25 * materialCount) + (0.35 * processCount) + (0.1 * domainCount) + (0.15 * flagsScore);
+  return Math.max(0, Math.min(1, raw / 3));
 }

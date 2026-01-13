@@ -22,6 +22,16 @@ export function predictWithLinearModel(input: { prioridad: 'ALTA'|'MEDIA'|'BAJA'
   return Math.max(900, Math.round(yhat));
 }
 
+export function predictWithLinearModelInfo(input: { prioridad: 'ALTA'|'MEDIA'|'BAJA'; precio?: number|null; descripcion?: string|null; workerSkills?: any; cargaActual?: number|null; fechaIngreso?: string|Date|null }): { value: number; version: string } | null {
+  const model: LinearModel | null = loadModel();
+  if (!model) return null;
+  const x = featuresForPedido(input, model.meta);
+  const raw = model.coef.reduce((sum: number, c: number, i: number) => sum + c * (x[i] ?? 0), 0);
+  const yhat = applyPriors(raw, input, model.meta);
+  if (!isFinite(yhat)) return null;
+  return { value: Math.max(900, Math.round(yhat)), version: model.version || 'fs' };
+}
+
 export async function predictWithLatestModel(input: { prioridad: 'ALTA'|'MEDIA'|'BAJA'; precio?: number|null; descripcion?: string|null; workerSkills?: any; cargaActual?: number|null; fechaIngreso?: string|Date|null }): Promise<number | null> {
   const model: LinearModel | null = await loadLatestModelFromDB();
   if (!model) return null;
@@ -30,4 +40,14 @@ export async function predictWithLatestModel(input: { prioridad: 'ALTA'|'MEDIA'|
   const yhat = applyPriors(raw, input, model.meta);
   if (!isFinite(yhat)) return null;
   return Math.max(900, Math.round(yhat));
+}
+
+export async function predictWithLatestModelInfo(input: { prioridad: 'ALTA'|'MEDIA'|'BAJA'; precio?: number|null; descripcion?: string|null; workerSkills?: any; cargaActual?: number|null; fechaIngreso?: string|Date|null }): Promise<{ value: number; version: string } | null> {
+  const model: LinearModel | null = await loadLatestModelFromDB();
+  if (!model) return null;
+  const x = featuresForPedido(input, model.meta);
+  const raw = model.coef.reduce((sum: number, c: number, i: number) => sum + c * (x[i] ?? 0), 0);
+  const yhat = applyPriors(raw, input, model.meta);
+  if (!isFinite(yhat)) return null;
+  return { value: Math.max(900, Math.round(yhat)), version: model.version || 'db' };
 }
