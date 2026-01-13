@@ -2,7 +2,7 @@
 import { prisma } from '../prisma/client.js';
 import { success, fail } from '../utils/response.js';
 import { suggestTopTrabajador } from '../services/HeuristicsService.js';
-import { predictTiempoSec, storePrediccion } from '../services/MLService.js';
+import { predictTiempoSecHybridDetailed, storePrediccion } from '../services/MLService.js';
 import { scheduleEvaluatePedidos } from '../services/KanbanMonitorService.js';
 import { logger } from '../utils/logger.js';
 import RealtimeService from '../realtime/RealtimeService.js';
@@ -23,8 +23,11 @@ export const asignar = async (req: Request, res: Response, next: NextFunction) =
 
   // Estimar tiempo si no viene
   let tEstimado = typeof tiempo_estimado_sec === 'number' ? tiempo_estimado_sec : undefined;
+  let modeloVersion = 'manual';
   if (typeof tEstimado === 'undefined') {
-    tEstimado = await predictTiempoSec(Number(pedido_id), trabajador);
+    const estim = await predictTiempoSecHybridDetailed(Number(pedido_id), trabajador);
+    tEstimado = estim.adjustedSec;
+    modeloVersion = `${estim.modelVersion}+heur`;
   }
 
   // Create an assignment record
@@ -46,7 +49,7 @@ export const asignar = async (req: Request, res: Response, next: NextFunction) =
   }
   await prisma.pedidos.update({ where: { id: Number(pedido_id) }, data: dataUpdate });
   // Persist predicted time for learning history
-  if (tEstimado) await storePrediccion(Number(pedido_id), trabajador, tEstimado);
+  if (tEstimado) await storePrediccion(Number(pedido_id), trabajador, tEstimado, modeloVersion);
   scheduleEvaluatePedidos(Number(pedido_id));
   logger.info({ msg: 'Asignación creada', asign });
   const pedidoAct = await prisma.pedidos.findUnique({ where: { id: Number(pedido_id) }, include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } } } });

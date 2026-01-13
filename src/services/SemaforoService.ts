@@ -1,5 +1,6 @@
 import { prisma } from '../prisma/client.js';
-import { predictTiempoSec } from './MLService.js';
+import { predictTiempoSecHybridDetailed } from './MLService.js';
+import { parseDescripcion, computeComplexityScore } from './ml/features.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import ClientNotificationService from './ClientNotificationService.js';
 
@@ -129,42 +130,62 @@ export async function getTiempoRealSec(pedidoId: number): Promise<number> {
   return cerrados + abiertoSec;
 }
 
-export async function computeSemaforoForPedido(pedidoId: number): Promise<{ color: SemaforoColor; tRealSec: number; tEstimadoSec: number; slackSec: number; ratio: number }>
+export async function computeSemaforoForPedido(pedidoId: number): Promise<{
+  color: SemaforoColor;
+  tRealSec: number;
+  tEstimadoSec: number;
+  slackSec: number;
+  ratio: number;
+  ratioAdjusted: number;
+  complexityScore: number;
+  loadRatio: number;
+}>
 {
-  const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId }, select: { fecha_estimada_fin: true, prioridad: true, responsable_id: true } });
+  const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId }, select: { fecha_estimada_fin: true, prioridad: true, responsable_id: true, descripcion: true } });
   if (!pedido || !pedido.fecha_estimada_fin) {
-    return { color: 'VERDE', tRealSec: 0, tEstimadoSec: 0, slackSec: Number.MAX_SAFE_INTEGER, ratio: 0 };
+    return { color: 'VERDE', tRealSec: 0, tEstimadoSec: 0, slackSec: Number.MAX_SAFE_INTEGER, ratio: 0, ratioAdjusted: 0, complexityScore: 0, loadRatio: 0 };
   }
 
   const tRealSec = await getTiempoRealSec(pedidoId);
   const responsableId = pedido.responsable_id ?? 0;
-  const tEstimadoSec = await predictTiempoSec(pedidoId, responsableId);
+  const estim = await predictTiempoSecHybridDetailed(pedidoId, responsableId);
+  const tEstimadoSec = estim.adjustedSec;
   const tRestanteSec = Math.max(0, tEstimadoSec - tRealSec);
   const slackSec = businessSecondsBetween(new Date(), new Date(pedido.fecha_estimada_fin));
   const ratio = slackSec > 0 ? (tRestanteSec / slackSec) : Number.POSITIVE_INFINITY;
 
+  const parsed = parseDescripcion(pedido.descripcion ?? '');
+  const complexityScore = computeComplexityScore(parsed);
+  const activeStates = ['PENDIENTE', 'ASIGNADO', 'EN_PROGRESO', 'QA'];
+  const wipActual = responsableId
+    ? await prisma.pedidos.count({ where: { responsable_id: responsableId, estado: { in: activeStates as any } } })
+    : 0;
+  const wipMax = Math.max(1, Number(process.env.WIP_MAX || 5));
+  const loadRatio = Math.min(1, wipActual / wipMax);
+  const ratioAdjusted = ratio * (1 + (complexityScore * 0.25) + (loadRatio * 0.15));
+
   // Nueva regla: ROJO si ya no alcanza el tiempo (slack <= 0 o tRestante >= slack).
   if (slackSec <= 0 || tRestanteSec >= slackSec) {
-    return { color: 'ROJO', tRealSec, tEstimadoSec, slackSec, ratio };
+    return { color: 'ROJO', tRealSec, tEstimadoSec, slackSec, ratio, ratioAdjusted, complexityScore, loadRatio };
   }
 
   // AMARILLO como advertencia cuando el remanente consume gran parte del margen (por defecto 80% o env).
   const warnRatio = Number(process.env.SEMAFORO_RATIO_YELLOW ?? getThresholds(pedido.prioridad as any).yellow ?? 0.8);
-  const color: SemaforoColor = ratio >= warnRatio ? 'AMARILLO' : 'VERDE';
-  return { color, tRealSec, tEstimadoSec, slackSec, ratio };
+  const color: SemaforoColor = ratioAdjusted >= warnRatio ? 'AMARILLO' : 'VERDE';
+  return { color, tRealSec, tEstimadoSec, slackSec, ratio, ratioAdjusted, complexityScore, loadRatio };
 }
 
 export async function applyAndEmitSemaforo(pedidoId: number) {
   const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId }, include: { cliente: true } });
   if (!pedido) return { changed: false };
-  const { color, tRealSec, tEstimadoSec, slackSec, ratio } = await computeSemaforoForPedido(pedidoId);
+  const { color, tRealSec, tEstimadoSec, slackSec, ratio, ratioAdjusted, complexityScore, loadRatio } = await computeSemaforoForPedido(pedidoId);
   const prev = pedido.semaforo as SemaforoColor;
   if (prev !== color) {
     await prisma.pedidos.update({ where: { id: pedidoId }, data: { semaforo: color } }).catch(() => {});
     try {
-      RealtimeService.emitToOperators('kanban:semaforo-changed', { pedidoId, semaforo: color, tRealSec, tEstimadoSec, slackSec, ratio });
+      RealtimeService.emitToOperators('kanban:semaforo-changed', { pedidoId, semaforo: color, tRealSec, tEstimadoSec, slackSec, ratio, ratioAdjusted, complexityScore, loadRatio });
       if (color === 'ROJO') {
-        RealtimeService.emitWebAlert('RETRASO', `Pedido #${pedidoId} en riesgo (ROJO)`, { pedidoId, ratio });
+        RealtimeService.emitWebAlert('RETRASO', `Pedido #${pedidoId} en riesgo (ROJO)`, { pedidoId, ratio, ratioAdjusted, complexityScore, loadRatio });
         // Notificación al cliente (throttle por DB + SSE ya tienen anti-spam)
         try {
           const cutoff = new Date(Date.now() - 30 * 60 * 1000);
@@ -190,4 +211,3 @@ export async function applyAndEmitSemaforo(pedidoId: number) {
 }
 
 export default { computeSemaforoForPedido, applyAndEmitSemaforo, getTiempoRealSec };
-

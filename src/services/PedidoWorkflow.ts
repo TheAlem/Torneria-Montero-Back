@@ -1,6 +1,6 @@
 import { prisma } from '../prisma/client.js';
 import NotificationService from './notificationService.js';
-import { predictTiempoSec, recalcPedidoEstimate, upsertResultadoPrediccion } from './MLService.js';
+import { predictTiempoSecHybridDetailed, recalcPedidoEstimate, upsertResultadoPrediccion } from './MLService.js';
 import { logger } from '../utils/logger.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import { applyAndEmitSemaforo, getTiempoRealSec, businessSecondsBetween } from './SemaforoService.js';
@@ -146,8 +146,9 @@ export async function transitionEstado(
         if (pedido.fecha_estimada_fin) {
           const remainingSec = Math.max(0, Math.round((new Date(pedido.fecha_estimada_fin).getTime() - now.getTime()) / 1000));
           const responsableId = pedido.responsable_id ?? 0;
-          const estimSec = await predictTiempoSec(pedidoId, responsableId);
-          if (estimSec > remainingSec) {
+          const estimSec = await predictTiempoSecHybridDetailed(pedidoId, responsableId);
+          const estimadoSec = estimSec.adjustedSec;
+          if (estimadoSec > remainingSec) {
             await prisma.pedidos.update({ where: { id: pedidoId }, data: { semaforo: 'ROJO' } });
             const alertaNotif = await ClientNotificationService.createNotification({
               pedidoId,

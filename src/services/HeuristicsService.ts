@@ -1,6 +1,8 @@
 ﻿import { prisma } from '../prisma/client.js';
-import { predictTiempoSec } from './MLService.js';
+import { predictTiempoSecHybridDetailed } from './MLService.js';
 import { normalizeSkills, parseDescripcion, skillOverlap } from './ml/features.js';
+import { buildHardRequirements, isAyudanteRole, workerMeetsRequirements } from './heuristics/requirements.js';
+import { collectGeneralTasks } from './heuristics/adjustments.js';
 
 type RankedTrabajador = { id: number; score: number };
 
@@ -33,6 +35,12 @@ export type CandidateProfile = {
   onTimeScore: number;
   delayScore: number;
   prioridadScore: number;
+  hardConstraints: string[];
+  reasons: string[];
+  isAyudante: boolean;
+  etaSecBase?: number | null;
+  etaSecAdjusted?: number | null;
+  etaInterval?: { minSec: number; maxSec: number; bufferPct: number } | null;
   etaSec?: number | null;
   eta?: { display: string; fecha: string; hora: string; iso: string } | null;
   disponibilidad?: any;
@@ -147,7 +155,7 @@ const formatEta = (ts: number) => {
 export async function buildCandidatesForPedido(
   pedidoId: number,
   limit = 5,
-  opts?: { includeUser?: boolean; includeEta?: boolean }
+  opts?: { includeUser?: boolean; includeEta?: boolean; includeAyudantes?: boolean }
 ): Promise<CandidateProfile[]> {
   const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId }, select: { prioridad: true, descripcion: true } });
   if (!pedido) return [];
@@ -176,8 +184,16 @@ export async function buildCandidatesForPedido(
   const parsed = parseDescripcion(pedido.descripcion);
   const tags = [
     ...(parsed.materiales.acero ? ['acero'] : []),
+    ...(parsed.materiales.acero_1045 ? ['acero_1045'] : []),
     ...(parsed.materiales.bronce ? ['bronce'] : []),
+    ...(parsed.materiales.bronce_fundido ? ['bronce_fundido'] : []),
+    ...(parsed.materiales.bronce_laminado ? ['bronce_laminado'] : []),
+    ...(parsed.materiales.bronce_fosforado ? ['bronce_fosforado'] : []),
     ...(parsed.materiales.inox ? ['inox'] : []),
+    ...(parsed.materiales.fundido ? ['fundido'] : []),
+    ...(parsed.materiales.teflon ? ['teflon'] : []),
+    ...(parsed.materiales.nylon ? ['nylon'] : []),
+    ...(parsed.materiales.aluminio ? ['aluminio'] : []),
     ...(parsed.procesos.torneado ? ['torneado'] : []),
     ...(parsed.procesos.fresado ? ['fresado'] : []),
     ...(parsed.procesos.roscado ? ['roscado'] : []),
@@ -196,14 +212,12 @@ export async function buildCandidatesForPedido(
     ...(parsed.domain.prensa ? ['prensa'] : []),
     ...(parsed.domain.alineado ? ['alineado'] : []),
     ...(parsed.domain.torneado_base ? ['torneado_base'] : []),
+    ...(parsed.domain.amolado ? ['amolado'] : []),
+    ...(parsed.domain.esmerilado ? ['esmerilado'] : []),
+    ...(parsed.domain.corte ? ['corte'] : []),
+    ...(parsed.domain.taladro_simple ? ['taladro_simple'] : []),
   ];
-  const requiredProcesses: string[] = [];
-  if (parsed.procesos.torneado) requiredProcesses.push('torneado');
-  if (parsed.procesos.fresado) requiredProcesses.push('fresado');
-  if (parsed.procesos.roscado) requiredProcesses.push('roscado');
-  if (parsed.procesos.taladrado) requiredProcesses.push('taladrado');
-  if (parsed.procesos.soldadura) requiredProcesses.push('soldadura');
-  if (parsed.procesos.pulido) requiredProcesses.push('pulido');
+  const { requiredSkills, reasons: hardConstraintReasons } = buildHardRequirements(parsed);
 
   const wipMax = Math.max(1, Number(process.env.WIP_MAX || 5));
   const prioScore = prioridadScore(pedido.prioridad as any);
@@ -218,10 +232,15 @@ export async function buildCandidatesForPedido(
     // Penaliza más rápido por WIP: 0->1, 1->0.5, 2->0.33, 3->0.25
     const wipScore = Math.max(0, Math.min(1, 1 / (1 + Math.max(0, wipActual))));
     const rolToken = normalizeRol((t as any).rol_tecnico);
-    const roleScore = roleMatchScore(rolToken, requiredProcesses);
+    const roleScore = roleMatchScore(rolToken, requiredSkills);
     const desvioScore = stats.avgDesvio != null ? (1 - Math.min(1, Math.max(0, stats.avgDesvio))) : 0.5;
     const onTimeScore = stats.conFechaCompromiso > 0 ? (stats.onTime / Math.max(1, stats.conFechaCompromiso)) : null;
     const delayScore = stats.avgDelaySec != null ? Math.max(0, 1 - Math.min(1, stats.avgDelaySec / (4 * 3600))) : null;
+
+    const isAyudante = isAyudanteRole(skills, rolToken);
+    const meetsHard = workerMeetsRequirements(skills, rolToken, requiredSkills);
+    if (!meetsHard) continue;
+    if (isAyudante && !opts?.includeAyudantes) continue;
 
     const historyWeight = stats.completados > 0 ? Math.min(0.85, stats.completados / (stats.completados + 3)) : 0;
     const baseNeutral = 0.5;
@@ -246,13 +265,29 @@ export async function buildCandidatesForPedido(
 
     let etaSec: number | null = null;
     let eta: CandidateProfile['eta'] = null;
+    let etaSecBase: number | null = null;
+    let etaSecAdjusted: number | null = null;
+    let etaInterval: CandidateProfile['etaInterval'] = null;
+    let etaReasons: string[] = [];
     if (opts?.includeEta) {
       try {
-        etaSec = await predictTiempoSec(pedidoId, t.id);
-        const parts = formatEta(Date.now() + etaSec * 1000);
+        const estim = await predictTiempoSecHybridDetailed(pedidoId, t.id);
+        etaSecBase = estim.baseSec;
+        etaSecAdjusted = estim.adjustedSec;
+        etaInterval = estim.interval;
+        etaReasons = estim.reasons;
+        etaSec = estim.adjustedSec;
+        const parts = formatEta(Date.now() + estim.adjustedSec * 1000);
         eta = { display: parts.display, fecha: parts.fecha, hora: parts.hora, iso: parts.iso };
       } catch {}
     }
+
+    const reasons: string[] = [];
+    if (requiredSkills.length) reasons.push(...hardConstraintReasons);
+    if (rolToken) reasons.push(`Rol técnico: ${rolToken}`);
+    if (skillScore >= 0.8) reasons.push('Alta compatibilidad de skills');
+    if (wipScore < 0.5) reasons.push('Carga actual alta');
+    if (etaReasons.length) reasons.push(...etaReasons.slice(0, 3));
 
     candidates.push({
       trabajadorId: t.id,
@@ -273,6 +308,12 @@ export async function buildCandidatesForPedido(
       onTimeScore: onTimeScore ?? 0.5,
       delayScore: delayScore ?? 0.5,
       prioridadScore: prioScore,
+      hardConstraints: hardConstraintReasons,
+      reasons,
+      isAyudante,
+      etaSecBase,
+      etaSecAdjusted,
+      etaInterval,
       etaSec,
       eta,
       disponibilidad: (t as any).disponibilidad ?? null,
@@ -297,6 +338,47 @@ export async function buildCandidatesForPedido(
       return ta - tb;
     })
     .slice(0, limit);
+}
+
+export type SupportSuggestion = {
+  trabajadorId: number;
+  nombre: string | null;
+  email: string | null;
+  skills: string[];
+  rol_tecnico: string | null;
+  tareas_generales: string[];
+  motivo: string;
+};
+
+export async function buildSupportCandidatesForPedido(pedidoId: number): Promise<SupportSuggestion[]> {
+  const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId }, select: { descripcion: true } });
+  if (!pedido) return [];
+  const parsed = parseDescripcion(pedido.descripcion);
+  const generalTasks = collectGeneralTasks(parsed);
+  if (!generalTasks.length) return [];
+
+  const trabajadores = await prisma.trabajadores.findMany({
+    where: { estado: 'Activo' },
+    include: { usuario: { select: { id: true, nombre: true, email: true } } }
+  });
+
+  return trabajadores
+    .map(t => {
+      const skills = normalizeSkills((t as any).skills);
+      const rolToken = normalizeRol((t as any).rol_tecnico);
+      return {
+        trabajadorId: t.id,
+        nombre: (t as any).usuario?.nombre ?? null,
+        email: (t as any).usuario?.email ?? null,
+        skills,
+        rol_tecnico: (t as any).rol_tecnico ?? null,
+        tareas_generales: generalTasks,
+        motivo: 'Apoyo manual sugerido (tareas generales)',
+        isAyudante: isAyudanteRole(skills, rolToken),
+      };
+    })
+    .filter(t => t.isAyudante)
+    .map(({ isAyudante, ...rest }) => rest);
 }
 
 export async function rankTrabajadoresForPedido(pedidoId: number, limit = 5): Promise<RankedTrabajador[]> {

@@ -4,7 +4,7 @@ import { applyAndEmitSemaforo } from './SemaforoService.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import { logger } from '../utils/logger.js';
 import { envFlag } from '../utils/env.js';
-import { buildCandidatesForPedido } from './HeuristicsService.js';
+import { buildCandidatesForPedido, buildSupportCandidatesForPedido } from './HeuristicsService.js';
 
 type Candidate = {
   trabajadorId: number;
@@ -20,6 +20,11 @@ type Candidate = {
   etaIso?: string | null;    // ISO completa para cálculos/notificaciones
   saturado: boolean;
   score: number;
+  razones?: string[];
+  hardConstraints?: string[];
+  tiempo_estimado_sec?: number | null;
+  tiempo_estimado_base_sec?: number | null;
+  tiempo_estimado_rango?: { minSec: number; maxSec: number; bufferPct: number } | null;
 };
 
 export async function suggestCandidates(pedidoId: number): Promise<Candidate[]> {
@@ -38,11 +43,24 @@ export async function suggestCandidates(pedidoId: number): Promise<Candidate[]> 
     etaIso: c.eta?.iso ?? null,
     saturado: c.saturado,
     score: c.score,
+    razones: c.reasons,
+    hardConstraints: c.hardConstraints,
+    tiempo_estimado_sec: c.etaSecAdjusted ?? c.etaSec ?? null,
+    tiempo_estimado_base_sec: c.etaSecBase ?? null,
+    tiempo_estimado_rango: c.etaInterval ?? null,
   })).sort((a, b) => {
     if (a.saturado !== b.saturado) return Number(a.saturado) - Number(b.saturado);
     if (b.score !== a.score) return b.score - a.score;
     return 0;
   });
+}
+
+export async function suggestAssignmentBundle(pedidoId: number): Promise<{ candidates: Candidate[]; apoyoManual: any[] }> {
+  const [candidates, apoyoManual] = await Promise.all([
+    suggestCandidates(pedidoId),
+    buildSupportCandidatesForPedido(pedidoId),
+  ]);
+  return { candidates, apoyoManual };
 }
 
 export async function autoAssignIfEnabled(pedidoId: number): Promise<boolean> {
@@ -173,4 +191,3 @@ export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'A
 }
 
 export default { suggestCandidates, autoAssignIfEnabled, maybeReassignIfEnabled };
-

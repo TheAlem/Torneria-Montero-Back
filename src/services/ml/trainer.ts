@@ -185,11 +185,71 @@ export async function trainLinearDurationModel(limit = 1000) {
   const predict = (X: number[][]) => X.map(row => coef.reduce((s, c, i) => s + c * (row[i] ?? 0), 0));
   const yhat_tr = predict(Xtr);
   const mae_train = yhat_tr.reduce((acc, yh, i) => acc + Math.abs(yh - ytr[i][0]), 0) / yhat_tr.length;
+  const mape_train = yhat_tr.reduce((acc, yh, i) => acc + Math.abs(yh - ytr[i][0]) / Math.max(1, ytr[i][0]), 0) / yhat_tr.length;
   const yhat_va = predict(Xva);
   const mae_valid = yhat_va.length ? (yhat_va.reduce((acc, yh, i) => acc + Math.abs(yh - yva[i][0]), 0) / yhat_va.length) : mae_train;
+  const mape_valid = yhat_va.length ? (yhat_va.reduce((acc, yh, i) => acc + Math.abs(yh - yva[i][0]) / Math.max(1, yva[i][0]), 0) / yhat_va.length) : mape_train;
+
+  const buildMetricsByTag = () => {
+    const metrics: Record<string, { mae: number; mape: number; count: number }> = {};
+    const idxMap = (name: string) => extraNames.indexOf(name);
+    const tagNames = [
+      'mat_acero',
+      'mat_acero_1045',
+      'mat_bronce',
+      'mat_bronce_fundido',
+      'mat_bronce_laminado',
+      'mat_bronce_fosforado',
+      'mat_inox',
+      'mat_fundido',
+      'mat_teflon',
+      'mat_nylon',
+      'mat_aluminio',
+      'proc_torneado',
+      'proc_fresado',
+      'proc_roscado',
+      'proc_taladrado',
+      'proc_soldadura',
+      'proc_pulido',
+    ];
+    for (const tag of tagNames) {
+      const idxTag = idxMap(tag);
+      if (idxTag < 0) continue;
+      const ys: number[] = [];
+      const yh: number[] = [];
+      validIdx.forEach((sampleIdx, i) => {
+        if ((extras[sampleIdx]?.[idxTag] ?? 0) > 0) {
+          ys.push(yva[i][0]);
+          yh.push(yhat_va[i] ?? 0);
+        }
+      });
+      if (!ys.length) continue;
+      const mae = ys.reduce((acc, y, i) => acc + Math.abs(yh[i] - y), 0) / ys.length;
+      const mape = ys.reduce((acc, y, i) => acc + Math.abs(yh[i] - y) / Math.max(1, y), 0) / ys.length;
+      metrics[tag] = { mae, mape, count: ys.length };
+    }
+    return metrics;
+  };
 
   // Persist model with training scale (used at inference)
-  const model = { version: 'v1.2', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const, coef, meta: { names, precioScale: { mean, std }, priors } };
+  const model = {
+    version: 'v1.2',
+    trainedAt: new Date().toISOString(),
+    algo: 'linear-regression-v1' as const,
+    coef,
+    meta: {
+      names,
+      precioScale: { mean, std },
+      priors,
+      metrics: {
+        mae_train,
+        mae_valid,
+        mape_train,
+        mape_valid,
+        byTag: buildMetricsByTag(),
+      },
+    }
+  };
   const path = saveModel(model);
   await saveModelToDB(model, { total: rows.length, mae: mae_valid, precision: mae_train });
   return { count: rows.length, path, model, mae: mae_valid, mae_train, mae_valid } as any;

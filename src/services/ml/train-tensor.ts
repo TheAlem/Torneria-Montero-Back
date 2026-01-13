@@ -187,10 +187,56 @@ export async function trainLinearDurationModelTF(limit = 1000) {
     yhatVa.length === 0
       ? null
       : yhatVa.reduce((acc, row, i) => acc + Math.abs(row[0] - yva[i]), 0) / yhatVa.length;
+  const mape_valid =
+    yhatVa.length === 0
+      ? null
+      : yhatVa.reduce((acc, row, i) => acc + Math.abs(row[0] - yva[i]) / Math.max(1, yva[i]), 0) / yhatVa.length;
 
   const yhatTrTensor = modelTF.predict(XtrTensor) as TF.Tensor;
   const yhatTr = (await yhatTrTensor.array()) as number[][];
   const mae_train = yhatTr.reduce((acc, row, i) => acc + Math.abs(row[0] - ytr[i]), 0) / yhatTr.length;
+  const mape_train = yhatTr.reduce((acc, row, i) => acc + Math.abs(row[0] - ytr[i]) / Math.max(1, ytr[i]), 0) / yhatTr.length;
+
+  const buildMetricsByTag = () => {
+    const metrics: Record<string, { mae: number; mape: number; count: number }> = {};
+    const idxMap = (name: string) => extraNames.indexOf(name);
+    const tagNames = [
+      'mat_acero',
+      'mat_acero_1045',
+      'mat_bronce',
+      'mat_bronce_fundido',
+      'mat_bronce_laminado',
+      'mat_bronce_fosforado',
+      'mat_inox',
+      'mat_fundido',
+      'mat_teflon',
+      'mat_nylon',
+      'mat_aluminio',
+      'proc_torneado',
+      'proc_fresado',
+      'proc_roscado',
+      'proc_taladrado',
+      'proc_soldadura',
+      'proc_pulido',
+    ];
+    for (const tag of tagNames) {
+      const idxTag = idxMap(tag);
+      if (idxTag < 0) continue;
+      const ys: number[] = [];
+      const yh: number[] = [];
+      validIdx.forEach((sampleIdx, i) => {
+        if ((extras[sampleIdx]?.[idxTag] ?? 0) > 0) {
+          ys.push(yva[i]);
+          yh.push(yhatVa[i]?.[0] ?? 0);
+        }
+      });
+      if (!ys.length) continue;
+      const mae = ys.reduce((acc, y, i) => acc + Math.abs(yh[i] - y), 0) / ys.length;
+      const mape = ys.reduce((acc, y, i) => acc + Math.abs(yh[i] - y) / Math.max(1, y), 0) / ys.length;
+      metrics[tag] = { mae, mape, count: ys.length };
+    }
+    return metrics;
+  };
 
   // 7) Extraer pesos
   const dense = modelTF.layers[0];
@@ -204,7 +250,18 @@ export async function trainLinearDurationModelTF(limit = 1000) {
     trainedAt: new Date().toISOString(),
     algo: 'linear-regression-v1',
     coef,
-    meta: { names, precioScale: { mean, std }, priors },
+    meta: {
+      names,
+      precioScale: { mean, std },
+      priors,
+      metrics: {
+        mae_train,
+        mae_valid,
+        mape_train,
+        mape_valid,
+        byTag: buildMetricsByTag(),
+      },
+    },
   };
 
   const path = saveModel(model);
@@ -213,5 +270,5 @@ export async function trainLinearDurationModelTF(limit = 1000) {
   // Liberar tensores
   tf.dispose([XtrTensor, ytrTensor, XvaTensor, yvaTensor, yhatVaTensor, yhatTrTensor]);
 
-  return { count: rows.length, path, model, mae: mae_valid, mae_train, mae_valid } as any;
+  return { count: rows.length, path, model, mae: mae_valid, mae_train, mae_valid, mape_valid } as any;
 }
