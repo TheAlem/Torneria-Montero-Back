@@ -47,6 +47,37 @@ const toNumber = (val: any) => {
   return Number.isFinite(n) ? n : null;
 };
 
+const parseDateParam = (value?: string) => {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const resolveReportRange = (
+  query: { from?: string; to?: string },
+  defaults: { from: Date; to: Date }
+) => {
+  let from = parseDateParam(query.from) ?? defaults.from;
+  let to = parseDateParam(query.to) ?? defaults.to;
+  if (from.getTime() > to.getTime()) {
+    const tmp = from;
+    from = to;
+    to = tmp;
+  }
+  return { from, to };
+};
+
+const buildReportWhere = (range: { from: Date; to: Date }) => {
+  const between = { gte: range.from, lte: range.to };
+  return {
+    OR: [
+      { fecha_inicio: between },
+      { fecha_actualizacion: between },
+      { fecha_estimada_fin: between },
+    ],
+  };
+};
+
 function buildReporte(periodo: 'semanal' | 'mensual', trabajos: PedidoLite[], rango: { from: Date; to: Date }) {
   const total = trabajos.length;
   const porEstado = countBy(trabajos, 'estado');
@@ -243,9 +274,10 @@ function buildReporte(periodo: 'semanal' | 'mensual', trabajos: PedidoLite[], ra
 export const semanal = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const now = new Date();
-    const from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const defaultFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const { from, to } = resolveReportRange(req.query as { from?: string; to?: string }, { from: defaultFrom, to: now });
     const trabajos = await prisma.pedidos.findMany({
-      where: { fecha_inicio: { gte: from } },
+      where: buildReportWhere({ from, to }),
       select: {
         id: true,
         titulo: true,
@@ -267,7 +299,7 @@ export const semanal = async (req: Request, res: Response, next: NextFunction) =
         responsable: { select: { id: true, rol_tecnico: true, direccion: true, usuario: { select: { nombre: true } } } },
       },
     }) as PedidoLite[];
-    const reporte = buildReporte('semanal', trabajos, { from, to: now });
+    const reporte = buildReporte('semanal', trabajos, { from, to });
     return success(res, reporte);
   } catch (err) { next(err); }
 };
@@ -275,9 +307,10 @@ export const semanal = async (req: Request, res: Response, next: NextFunction) =
 export const mensual = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const now = new Date();
-    const from = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+    const defaultFrom = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+    const { from, to } = resolveReportRange(req.query as { from?: string; to?: string }, { from: defaultFrom, to: now });
     const trabajos = await prisma.pedidos.findMany({
-      where: { fecha_inicio: { gte: from } },
+      where: buildReportWhere({ from, to }),
       select: {
         id: true,
         titulo: true,
@@ -299,7 +332,7 @@ export const mensual = async (req: Request, res: Response, next: NextFunction) =
         responsable: { select: { id: true, rol_tecnico: true, direccion: true, usuario: { select: { nombre: true } } } },
       },
     }) as PedidoLite[];
-    const reporte = buildReporte('mensual', trabajos, { from, to: now });
+    const reporte = buildReporte('mensual', trabajos, { from, to });
     return success(res, reporte);
   } catch (err) { next(err); }
 };

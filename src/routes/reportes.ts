@@ -13,6 +13,17 @@ const router = Router();
  *     summary: Reporte semanal (KPIs operativos)
  *     security:
  *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: from
+ *         schema:
+ *           type: string
+ *           example: '2025-01-01T00:00:00.000Z'
+ *       - in: query
+ *         name: to
+ *         schema:
+ *           type: string
+ *           example: '2025-01-07T23:59:59.999Z'
  *     responses:
  *       '200':
  *         description: Reporte semanal con KPIs (SLA, tiempos, backlog, tops, ganancia)
@@ -54,6 +65,17 @@ router.get('/semanal', authenticate, ctrl.semanal);
  *     summary: Reporte mensual (KPIs operativos)
  *     security:
  *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: from
+ *         schema:
+ *           type: string
+ *           example: '2025-04-01T00:00:00.000Z'
+ *       - in: query
+ *         name: to
+ *         schema:
+ *           type: string
+ *           example: '2025-04-30T23:59:59.999Z'
  *     responses:
  *       '200':
  *         description: Reporte mensual con KPIs (SLA, tiempos, backlog, tops, ganancia)
