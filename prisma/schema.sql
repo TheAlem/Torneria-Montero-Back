@@ -86,6 +86,7 @@ CREATE TABLE "pedidos" (
     "responsable_id" INTEGER,
     "semaforo" "Semaforo" NOT NULL DEFAULT 'VERDE',
     "notas" TEXT,
+    "detalle_trabajo" JSONB,
     "adjuntos" TEXT[],
     "tiempo_estimado_sec" INTEGER,
     "tiempo_real_sec" INTEGER,

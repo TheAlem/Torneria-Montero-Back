@@ -8,6 +8,7 @@ import RealtimeService from '../realtime/RealtimeService.js';
 import { resolveClienteIdentity } from '../services/ClienteIdentityService.js';
 import * as ClientNotificationService from '../services/ClientNotificationService.js';
 import { recalcPedidoEstimate } from '../services/MLService.js';
+import { buildDetalleFromPayload, buildNotasFromDetalle, normalizeDetalleTrabajo, parseNotasToDetalle } from '../services/PedidoDetails.js';
 import { scheduleEvaluatePedidos } from '../services/KanbanMonitorService.js';
 
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
@@ -61,7 +62,9 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
     const { includeDeleted } = req.query as any;
     const onlyVisible = String(includeDeleted || 'false').toLowerCase() !== 'true';
     if (onlyVisible && (pedido as any).eliminado) return fail(res, 'NOT_FOUND', 'Pedido no encontrado', 404);
-    return success(res, pedido);
+    const detalle = normalizeDetalleTrabajo((pedido as any).detalle_trabajo, (pedido as any).notas);
+    const notas = (pedido as any).notas ?? (detalle ? buildNotasFromDetalle(detalle) : null);
+    return success(res, { ...(pedido as any), ...detalle, detalle_trabajo: detalle, notas });
   } catch (err) { next(err); }
 };
 
@@ -92,7 +95,9 @@ export const crear = async (req: Request, res: Response, next: NextFunction) => 
         });
       }
     } catch {}
-    return success(res, pedido, 201);
+    const detalle = normalizeDetalleTrabajo((pedido as any)?.detalle_trabajo, (pedido as any)?.notas);
+    const notas = (pedido as any)?.notas ?? (detalle ? buildNotasFromDetalle(detalle) : null);
+    return success(res, { ...(pedido as any), ...detalle, detalle_trabajo: detalle, notas }, 201);
   } catch (err: any) {
     if (err?.name === 'ZodError') return fieldsValidation(res, err.errors ?? err);
     next(err);
@@ -119,6 +124,13 @@ export const actualizar = async (req: Request, res: Response, next: NextFunction
     if (typeof body.semaforo !== 'undefined') data.semaforo = body.semaforo;
     if (typeof body.notas !== 'undefined') data.notas = body.notas;
     if (typeof body.adjuntos !== 'undefined') data.adjuntos = body.adjuntos;
+    const { detalle, hasDetalle } = buildDetalleFromPayload(body);
+    if (hasDetalle) {
+      data.detalle_trabajo = detalle;
+      data.notas = buildNotasFromDetalle(detalle);
+    } else if (typeof body.notas === 'string') {
+      data.detalle_trabajo = parseNotasToDetalle(body.notas);
+    }
     if (typeof body.titulo !== 'undefined' || typeof body.descripcion !== 'undefined' || typeof body.prioridad !== 'undefined' || typeof body.precio !== 'undefined' || typeof body.responsable_id !== 'undefined') {
       needsRecalc = true;
     }
@@ -160,7 +172,9 @@ export const actualizar = async (req: Request, res: Response, next: NextFunction
         });
       }
     } catch {}
-    return success(res, pedido, 200, 'Pedido actualizado');
+    const detalleOut = normalizeDetalleTrabajo((pedido as any)?.detalle_trabajo, (pedido as any)?.notas);
+    const notasOut = (pedido as any)?.notas ?? (detalleOut ? buildNotasFromDetalle(detalleOut) : null);
+    return success(res, { ...(pedido as any), ...detalleOut, detalle_trabajo: detalleOut, notas: notasOut }, 200, 'Pedido actualizado');
   } catch (err) { next(err); }
 };
 

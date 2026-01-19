@@ -15,6 +15,8 @@ type WorkerStats = {
   coldStart: boolean;
 };
 
+type MaterialExperience = { material: string; count: number };
+
 export type CandidateProfile = {
   trabajadorId: number;
   nombre: string | null;
@@ -25,6 +27,7 @@ export type CandidateProfile = {
   score: number;
   coldStart: boolean;
   desvioHistorico: number | null;
+  precision: number | null;
   onTimeRate: number | null;
   delayPromedio: number | null;
   saturado: boolean;
@@ -45,6 +48,7 @@ export type CandidateProfile = {
   eta?: { display: string; fecha: string; hora: string; iso: string } | null;
   disponibilidad?: any;
   rol_tecnico?: string | null;
+  materiales_experiencia?: MaterialExperience[];
 };
 
 function defaultStats(): WorkerStats {
@@ -161,7 +165,7 @@ export async function buildCandidatesForPedido(
   if (!pedido) return [];
 
   const trabajadores = await prisma.trabajadores.findMany({
-    where: { estado: 'Activo' },
+    where: { estado: { equals: 'Activo', mode: 'insensitive' } },
     include: opts?.includeUser ? { usuario: { select: { id: true, nombre: true, email: true } } } as any : undefined
   });
   if (!trabajadores.length) return [];
@@ -222,18 +226,63 @@ export async function buildCandidatesForPedido(
   const wipMax = Math.max(1, Number(process.env.WIP_MAX || 5));
   const prioScore = prioridadScore(pedido.prioridad as any);
 
+  const materialHistoryLimit = Number(process.env.ML_MATERIAL_HISTORY_LIMIT ?? 500);
+  const materialByWorker = new Map<number, Record<string, number>>();
+  if (materialHistoryLimit > 0) {
+    const history = await prisma.pedidos.findMany({
+      where: {
+        responsable_id: { in: workerIds },
+        estado: 'ENTREGADO',
+      },
+      select: { responsable_id: true, descripcion: true, fecha_actualizacion: true },
+      orderBy: { fecha_actualizacion: 'desc' },
+      take: materialHistoryLimit,
+    });
+    const addMat = (workerId: number, key: string) => {
+      const bucket = materialByWorker.get(workerId) ?? {};
+      bucket[key] = (bucket[key] || 0) + 1;
+      materialByWorker.set(workerId, bucket);
+    };
+    for (const h of history) {
+      if (!h.responsable_id) continue;
+      const p = parseDescripcion(h.descripcion ?? '');
+      const mats = p.materiales;
+      if (mats.acero) addMat(h.responsable_id, 'acero');
+      if (mats.acero_1045) addMat(h.responsable_id, 'acero_1045');
+      if (mats.bronce) addMat(h.responsable_id, 'bronce');
+      if (mats.bronce_fundido) addMat(h.responsable_id, 'bronce_fundido');
+      if (mats.bronce_laminado) addMat(h.responsable_id, 'bronce_laminado');
+      if (mats.bronce_fosforado) addMat(h.responsable_id, 'bronce_fosforado');
+      if (mats.inox) addMat(h.responsable_id, 'inox');
+      if (mats.fundido) addMat(h.responsable_id, 'fundido');
+      if (mats.teflon) addMat(h.responsable_id, 'teflon');
+      if (mats.nylon) addMat(h.responsable_id, 'nylon');
+      if (mats.aluminio) addMat(h.responsable_id, 'aluminio');
+    }
+  }
+  const getMaterialExperience = (workerId: number): MaterialExperience[] => {
+    const bucket = materialByWorker.get(workerId);
+    if (!bucket) return [];
+    return Object.entries(bucket)
+      .map(([material, count]) => ({ material, count }))
+      .sort((a, b) => b.count - a.count);
+  };
+
   const candidates: CandidateProfile[] = [];
   for (const t of trabajadores) {
     const stats = statsMap.get(t.id) ?? defaultStats();
-    const skills = normalizeSkills((t as any).skills);
+    const baseSkills = normalizeSkills((t as any).skills);
+    const rolToken = normalizeRol((t as any).rol_tecnico);
+    const skills = rolToken ? Array.from(new Set([...baseSkills, rolToken])) : baseSkills;
     const { score: overlap } = skillOverlap(skills, tags);
     const skillScore = tags.length ? overlap : 0.6;
     const wipActual = wipCounts.get(t.id) ?? 0;
     // Penaliza más rápido por WIP: 0->1, 1->0.5, 2->0.33, 3->0.25
     const wipScore = Math.max(0, Math.min(1, 1 / (1 + Math.max(0, wipActual))));
-    const rolToken = normalizeRol((t as any).rol_tecnico);
     const roleScore = roleMatchScore(rolToken, requiredSkills);
-    const desvioScore = stats.avgDesvio != null ? (1 - Math.min(1, Math.max(0, stats.avgDesvio))) : 0.5;
+    const desvioClamped = stats.avgDesvio != null ? Math.min(1, Math.max(0, stats.avgDesvio)) : null;
+    const desvioScore = desvioClamped != null ? (1 - desvioClamped) : 0.5;
+    const precision = desvioClamped != null ? (1 - desvioClamped) : null;
     const onTimeScore = stats.conFechaCompromiso > 0 ? (stats.onTime / Math.max(1, stats.conFechaCompromiso)) : null;
     const delayScore = stats.avgDelaySec != null ? Math.max(0, 1 - Math.min(1, stats.avgDelaySec / (4 * 3600))) : null;
 
@@ -299,6 +348,7 @@ export async function buildCandidatesForPedido(
       score: finalScore,
       coldStart: historyWeight === 0,
       desvioHistorico: stats.avgDesvio,
+      precision,
       onTimeRate: onTimeScore,
       delayPromedio: stats.avgDelaySec,
       saturado: wipActual >= wipMax,
@@ -319,6 +369,7 @@ export async function buildCandidatesForPedido(
       disponibilidad: (t as any).disponibilidad ?? null,
       rol_tecnico: (t as any).rol_tecnico ?? null,
       roleScore,
+      materiales_experiencia: getMaterialExperience(t.id),
     });
   }
 
@@ -399,6 +450,7 @@ export async function candidatesDetailsForPedido(pedidoId: number, limit = 5) {
     email: c.email,
     rol_tecnico: c.rol_tecnico || null,
     skills: c.skills,
+    materiales_experiencia: c.materiales_experiencia ?? [],
     disponibilidad: c.disponibilidad,
     carga_actual: c.wipActual,
     wipMax: c.wipMax,
@@ -406,6 +458,7 @@ export async function candidatesDetailsForPedido(pedidoId: number, limit = 5) {
     score: c.score,
     tiempo_estimado_sec: c.etaSec,
     desvio_promedio: typeof c.desvioHistorico === 'number' ? Number(c.desvioHistorico.toFixed(3)) : null,
+    precision: typeof c.precision === 'number' ? Number(c.precision.toFixed(3)) : null,
     onTimeRate: c.onTimeRate,
     delayPromedio: c.delayPromedio,
     coldStart: c.coldStart,

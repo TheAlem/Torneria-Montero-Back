@@ -31,6 +31,15 @@ const router = Router();
  *           type: number
  *         desvioHistorico:
  *           type: number
+ *         precision:
+ *           type: number
+ *         materiales_experiencia:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               material: { type: string }
+ *               count: { type: integer }
  *         etaSiToma:
  *           type: string
  *           nullable: true

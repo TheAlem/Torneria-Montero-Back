@@ -14,6 +14,8 @@ type Candidate = {
   wipMax: number;
   capacidadLibreMin: number; // placeholder (si no hay disponibilidad, queda 0)
   desvioHistorico: number;   // 0..1 (menor = mejor)
+  precision: number | null;  // 0..1 (mayor = mejor)
+  materiales_experiencia?: { material: string; count: number }[];
   etaSiToma: string | null;  // fecha/hora local sin año (dd/MM HH:mm)
   etaFecha?: string | null;  // dd/MM
   etaHora?: string | null;   // HH:mm
@@ -37,6 +39,8 @@ export async function suggestCandidates(pedidoId: number): Promise<Candidate[]> 
     wipMax: c.wipMax,
     capacidadLibreMin: 0,
     desvioHistorico: typeof c.desvioHistorico === 'number' ? c.desvioHistorico : null,
+    precision: typeof c.precision === 'number' ? c.precision : null,
+    materiales_experiencia: c.materiales_experiencia ?? [],
     etaSiToma: c.eta?.display ?? null,
     etaFecha: c.eta?.fecha ?? null,
     etaHora: c.eta?.hora ?? null,

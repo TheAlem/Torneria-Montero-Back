@@ -5,6 +5,13 @@ import { parseDescripcion } from './ml/features.js';
 import { applyHeuristicAdjustments, buildEstimateInterval } from './heuristics/adjustments.js';
 import { logger } from '../utils/logger.js';
 
+const median = (arr: number[]) => {
+  if (!arr.length) return null;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+};
+
 export async function predictTiempoSecDetailed(
   pedidoId: number,
   trabajadorId?: number | null
@@ -34,9 +41,10 @@ export async function predictTiempoSecDetailed(
     .filter(v => typeof v === 'number');
 
   const arr = (mismos.length >= 5 ? mismos : generales);
-  if (arr.length) {
-    const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
-    return { sec: Math.min(MAX_SEC, Math.max(MIN_SEC, Math.round(avg))), modelVersion: 'historico', source: 'historico' };
+  const cleaned = arr.filter(v => typeof v === 'number' && isFinite(v) && v >= MIN_SEC && v <= MAX_SEC);
+  if (cleaned.length) {
+    const med = median(cleaned) ?? cleaned[0];
+    return { sec: Math.min(MAX_SEC, Math.max(MIN_SEC, Math.round(med))), modelVersion: 'historico', source: 'historico' };
   }
 
   // Intentar modelo entrenado (si existe)

@@ -93,12 +93,13 @@ export function parseDescripcion(descRaw?: string | null): ParsedDescripcion {
     corte: +textHas(desc, ['corte', 'cortadora']),
     taladro_simple: +textHas(desc, ['taladro simple', 'taladro', 'mecha', 'mechas']),
   } as const;
+  const hasSoldadura = textHas(desc, ['soldad', 'solda', 'soldar', 'suelda']);
   const procesos = {
     torneado: +textHas(desc, ['torne', 'torno', 'torn ', 'torni', 'tornear', 'torner', 'torn.']),
     fresado: +textHas(desc, ['fresa', 'fresad', 'fresn']),
     roscado: +(textHas(desc, ['rosca', 'rosc', 'hilo']) || /\bm\d{1,2}\b/.test(desc)),
     taladrado: +textHas(desc, ['taladr', 'perfor', 'agujer', 'mea', 'broca']),
-    soldadura: +(textHas(desc, ['soldad']) || domain.recargue || domain.rellenado),
+    soldadura: +(hasSoldadura || domain.recargue || domain.rellenado),
     pulido: +textHas(desc, ['pulid', 'lij', 'acabado']),
   } as const;
   const hasRosca = procesos.roscado ? 1 : (/\bm\d{1,2}\b/.test(desc) ? 1 : 0);
@@ -125,9 +126,18 @@ export function normalizeSkills(sk: any): string[] {
   if (!sk) return [];
   const toArray = () => {
     if (Array.isArray(sk)) return sk as any[];
+    if (typeof sk === 'string') return sk.split(',').map(s => s.trim()).filter(Boolean);
     try { return Array.isArray(sk) ? (sk as any[]) : Object.values(sk as any); } catch { return []; }
   };
-  const raw = toArray().map((s: any) => String(s).toLowerCase().trim()).filter(Boolean);
+  let raw = toArray().map((s: any) => String(s).toLowerCase().trim()).filter(Boolean);
+  if (!Array.isArray(sk) && sk && typeof sk === 'object') {
+    const entries = Object.entries(sk as Record<string, any>);
+    const keysFromTruthy = entries
+      .filter(([, v]) => v === true || v === 1 || v === 'true')
+      .map(([k]) => String(k).toLowerCase().trim())
+      .filter(Boolean);
+    raw = [...raw, ...keysFromTruthy];
+  }
 
   const canon: string[] = [];
   for (const t of raw) {
@@ -142,6 +152,9 @@ export function normalizeSkills(sk: any): string[] {
       'fresa': 'fresado',
       'soldador': 'soldadura',
       'soldad': 'soldadura',
+      'soldar': 'soldadura',
+      'solda': 'soldadura',
+      'suelda': 'soldadura',
       'rosquero': 'roscado',
       'taladro': 'taladrado',
       'taladrar': 'taladrado',

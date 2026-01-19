@@ -154,6 +154,7 @@ model pedidos {
   responsable         trabajadores? @relation("responsable", fields: [responsable_id], references: [id])
   semaforo            Semaforo      @default(VERDE)
   notas               String?
+  detalle_trabajo     Json?
   adjuntos            String[]
   tiempo_estimado_sec Int?
   tiempo_real_sec     Int?

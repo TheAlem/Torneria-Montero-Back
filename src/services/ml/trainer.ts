@@ -1,6 +1,6 @@
 import { prisma } from '../../prisma/client.js';
 import { buildBaseAndExtraFeatures } from './features.js';
-import { saveModel, saveModelToDB } from './storage.js';
+import { getMaxSeconds, getMinSeconds, saveModel, saveModelToDB } from './storage.js';
 
 function transpose(A: number[][]): number[][] {
   return A[0].map((_, i) => A.map(row => row[i]));
@@ -123,8 +123,8 @@ export async function trainLinearDurationModel(limit = 1000) {
   }
 
   // Clamp target for robustness
-  const minSec = Number(process.env.ML_MIN_SECONDS ?? 180);
-  const maxSec = Number(process.env.ML_MAX_SECONDS ?? 6 * 24 * 3600);
+  const minSec = getMinSeconds();
+  const maxSec = getMaxSeconds();
   const yClamped = yBase.map(v => Math.min(maxSec, Math.max(minSec, v)));
 
   // Shuffle/split indices (80/20)

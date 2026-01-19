@@ -80,7 +80,7 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
 
 export const adminCreate = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { email, password, nombre, ci_rut, telefono, direccion, rol, rol_tecnico } = req.body as any;
+    const { email, password, nombre, ci_rut, telefono, direccion, rol, rol_tecnico, skills, disponibilidad } = req.body as any;
     if (!email || !password || !rol) {
       const errors: any = {};
       if (!email) errors.email = 'El email es obligatorio.';
@@ -106,7 +106,15 @@ export const adminCreate = async (req: Request, res: Response, next: NextFunctio
           rol: 'TRABAJADOR' as any,
           nombre: nombre || '',
           telefono: telefono || null,
-          trabajador: { create: { ci: ci_rut, direccion: direccion || null, rol_tecnico: rol_tecnico || null } }
+          trabajador: {
+            create: {
+              ci: ci_rut,
+              direccion: direccion || null,
+              rol_tecnico: rol_tecnico || null,
+              ...(typeof skills !== 'undefined' ? { skills } : {}),
+              ...(typeof disponibilidad !== 'undefined' ? { disponibilidad } : {}),
+            }
+          }
         },
         include: { trabajador: true }
       });
@@ -118,7 +126,17 @@ export const adminCreate = async (req: Request, res: Response, next: NextFunctio
           rol: 'TORNERO' as any,
           nombre: nombre || '',
           telefono: telefono || null,
-          ...(ci_rut ? { trabajador: { create: { ci: ci_rut, direccion: direccion || null, rol_tecnico: rol_tecnico || null } } } : {})
+          ...(ci_rut ? {
+            trabajador: {
+              create: {
+                ci: ci_rut,
+                direccion: direccion || null,
+                rol_tecnico: rol_tecnico || null,
+                ...(typeof skills !== 'undefined' ? { skills } : {}),
+                ...(typeof disponibilidad !== 'undefined' ? { disponibilidad } : {}),
+              }
+            }
+          } : {})
         },
         include: { trabajador: true }
       });

@@ -8,6 +8,19 @@ const ClienteInlineSchema = z.object({
   direccion: z.string().optional(),
 });
 
+const DetalleTrabajoSchema = z.object({
+  materiales: z.array(z.string()).optional(),
+  procesos: z.array(z.string()).optional(),
+  tags: z.array(z.string()).optional(),
+  tolerancia: z.string().optional(),
+  rosca: z.boolean().optional(),
+  rosca_paso: z.string().nullable().optional(),
+  cantidad_piezas: z.union([z.string(), z.number()]).optional(),
+  diametro_principal: z.union([z.string(), z.number()]).optional(),
+  descripcion_guiada: z.string().nullable().optional(),
+  codigo_interno: z.string().nullable().optional(),
+});
+
 export const CreatePedidoSchema = z.object({
   titulo: z.string().min(1),
   descripcion: z.string().min(1),
@@ -18,6 +31,8 @@ export const CreatePedidoSchema = z.object({
   fecha_estimada_fin: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   precio: z.number().positive().optional(),
   pagado: z.boolean().optional(),
+  notas: z.string().optional(),
+  ...DetalleTrabajoSchema.shape,
 }).refine((data) => !!data.cliente_id || !!data.cliente, {
   message: 'Debe proporcionar cliente_id o un objeto cliente',
   path: ['cliente'],
@@ -37,6 +52,7 @@ export const UpdatePedidoSchema = z.object({
   notas: z.string().optional(),
   adjuntos: z.array(z.string()).optional(),
   pagado: z.boolean().optional(),
+  ...DetalleTrabajoSchema.shape,
 });
 
 export type UpdatePedidoBody = z.infer<typeof UpdatePedidoSchema>;
