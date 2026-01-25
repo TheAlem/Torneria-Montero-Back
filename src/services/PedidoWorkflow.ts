@@ -3,7 +3,7 @@ import NotificationService from './notificationService.js';
 import { predictTiempoSecHybridDetailed, recalcPedidoEstimate, upsertResultadoPrediccion } from './MLService.js';
 import { logger } from '../utils/logger.js';
 import RealtimeService from '../realtime/RealtimeService.js';
-import { applyAndEmitSemaforo, getTiempoRealSec, businessSecondsBetween } from './SemaforoService.js';
+import { applyAndEmitSemaforo, getTiempoRealSec, businessSecondsBetween, getWorkerSchedule } from './SemaforoService.js';
 import { autoAssignIfEnabled, maybeReassignIfEnabled } from './AssignmentService.js';
 import * as ClientNotificationService from './ClientNotificationService.js';
 
@@ -79,7 +79,7 @@ export async function transitionEstado(
         const refreshed = await prisma.pedidos.findUnique({ where: { id: pedidoId } });
         if (refreshed) pedido = refreshed;
       }
-    } catch {}
+    } catch { }
   }
 
   // Abrir registro de tiempo cuando entra en EN_PROGRESO
@@ -97,7 +97,7 @@ export async function transitionEstado(
       });
     } catch (_) { /* ignore */ }
     // Aprendizaje online: estimar y fijar fecha si no existe
-    try { await recalcPedidoEstimate(pedidoId, { trabajadorId: pedido.responsable_id, updateFechaEstimada: true }); } catch {}
+    try { await recalcPedidoEstimate(pedidoId, { trabajadorId: pedido.responsable_id, updateFechaEstimada: true }); } catch { }
   }
 
   // Cerrar registro de tiempo abierto al salir de EN_PROGRESO
@@ -106,7 +106,11 @@ export async function transitionEstado(
       const abierto = await prisma.tiempos.findFirst({ where: { pedido_id: pedidoId, estado: 'ABIERTO' }, orderBy: { id: 'desc' } });
       if (abierto) {
         const fin = now;
-        const duracion = abierto.inicio ? Math.max(1, Math.round((fin.getTime() - new Date(abierto.inicio).getTime()) / 1000)) : null;
+        let duracion = null;
+        if (abierto.inicio) {
+          const schedule = await getWorkerSchedule(abierto.trabajador_id);
+          duracion = Math.max(1, businessSecondsBetween(new Date(abierto.inicio), fin, schedule?.shifts, schedule?.workdays));
+        }
         await prisma.tiempos.update({ where: { id: abierto.id }, data: { fin, duracion_sec: duracion, estado: 'CERRADO' } });
       }
     } catch (_) { /* ignore */ }
@@ -134,13 +138,13 @@ export async function transitionEstado(
         // Alerta web para operadores
         try {
           RealtimeService.emitWebAlert('ENTREGA_COMPLETADA', `Pedido #${pedidoId} entregado`, { pedidoId });
-        } catch {}
+        } catch { }
       } catch (_) { /* ignore */ }
     } else {
       try {
         const refreshed = await prisma.pedidos.findUnique({ where: { id: pedidoId } });
         if (refreshed) pedido = refreshed;
-      } catch {}
+      } catch { }
       // Evaluar semáforo para este pedido (riesgo de retraso)
       try {
         if (pedido.fecha_estimada_fin) {
@@ -191,7 +195,7 @@ export async function transitionEstado(
       const res = await applyAndEmitSemaforo(pedidoId);
       const color = (res as any)?.color;
       if (newEstado !== 'ENTREGADO' && color === 'ROJO') {
-        try { await maybeReassignIfEnabled(pedidoId, 'ROJO'); } catch {}
+        try { await maybeReassignIfEnabled(pedidoId, 'ROJO'); } catch { }
       }
     } catch (_) { /* ignore */ }
 
