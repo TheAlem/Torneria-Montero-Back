@@ -6,6 +6,7 @@ import RealtimeService from '../realtime/RealtimeService.js';
 import { applyAndEmitSemaforo, getTiempoRealSec, businessSecondsBetween, getWorkerSchedule } from './SemaforoService.js';
 import { autoAssignIfEnabled, maybeReassignIfEnabled } from './AssignmentService.js';
 import * as ClientNotificationService from './ClientNotificationService.js';
+import { Prisma } from '@prisma/client';
 
 type Estado = 'PENDIENTE' | 'ASIGNADO' | 'EN_PROGRESO' | 'QA' | 'ENTREGADO';
 const allowedTransitions: Record<Estado, Estado[]> = {
@@ -39,6 +40,47 @@ const estadoCopy: Record<Estado, { title: string; body: string }> = {
   }
 };
 
+const kanbanRealtimeSelect: Prisma.pedidosSelect = {
+  id: true,
+  titulo: true,
+  descripcion: true,
+  prioridad: true,
+  estado: true,
+  pagado: true,
+  semaforo: true,
+  fecha_estimada_fin: true,
+  fecha_actualizacion: true,
+  cliente: { select: { id: true, nombre: true, telefono: true } },
+  responsable: { select: { id: true, usuario: { select: { id: true, nombre: true } } } },
+  asignaciones: {
+    select: { origen: true, id: true },
+    orderBy: { id: 'desc' },
+    take: 1,
+  },
+};
+
+async function emitKanbanPedidoUpsert(pedidoId: number, prevEstado: Estado, reason: string) {
+  const card = await prisma.pedidos.findUnique({ where: { id: pedidoId }, select: kanbanRealtimeSelect });
+  if (!card) return;
+  const lastAssign = Array.isArray((card as any).asignaciones) && (card as any).asignaciones.length
+    ? (card as any).asignaciones[0]
+    : null;
+  const autoAsignado = lastAssign?.origen === 'SUGERIDO';
+  const { asignaciones, ...rest } = card as any;
+  const payload = {
+    pedidoId,
+    prevEstado,
+    newEstado: card.estado,
+    reason,
+    ts: Date.now(),
+    card: { ...rest, autoAsignado },
+  };
+  RealtimeService.emitToOperators('kanban:pedido-upsert', payload);
+  if (prevEstado !== (card.estado as Estado)) {
+    RealtimeService.emitToOperators('kanban:pedido-moved', payload);
+  }
+}
+
 export async function transitionEstado(
   pedidoId: number,
   newEstado: Estado,
@@ -70,6 +112,8 @@ export async function transitionEstado(
   }
   await prisma.pedidos.update({ where: { id: pedidoId }, data: updateData });
   pedido = { ...pedido, ...updateData };
+  // Evento inmediato para mover tarjeta entre columnas sin recargar todo el tablero.
+  try { await emitKanbanPedidoUpsert(pedidoId, prevEstado, 'status_transition'); } catch { }
 
   // Auto-asignar antes de abrir tiempos para no perder tracking
   if (newEstado === 'EN_PROGRESO' && !pedido.responsable_id) {
@@ -210,6 +254,9 @@ export async function transitionEstado(
         title: copy.title,
       });
     } catch (_) { /* ignore */ }
+
+    // Emitir snapshot final de la tarjeta tras side-effects (semaforo/ETA/reasignación).
+    try { await emitKanbanPedidoUpsert(pedidoId, prevEstado, 'post_side_effects'); } catch { }
   };
 
   if (opts.backgroundSideEffects !== false) {

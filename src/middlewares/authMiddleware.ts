@@ -25,13 +25,25 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       logger.error('Configuración del servidor inválida: falta JWT_SECRET');
       return fail(res, 'SERVER_ERROR', 'Configuración del servidor inválida', 500);
     }
-    const payload = (jwt as any).verify(token, JWT_SECRET);
-    const profile = await prisma.usuarios.findUnique({ where: { id: Number(payload.id) } });
-    if (!profile) return fail(res, 'AUTH_ERROR', 'Usuario no encontrado', 401);
-    if (String(profile.rol).toUpperCase() === 'TRABAJADOR') {
-      return fail(res, 'AUTH_ERROR', 'Acceso denegado', 403);
+    const payload = (jwt as any).verify(token, JWT_SECRET) as any;
+    const userId = Number(payload?.id);
+    if (!Number.isFinite(userId)) return fail(res, 'AUTH_ERROR', 'Token inválido', 401);
+
+    const tokenRole = String(payload?.role ?? payload?.rol ?? '').toUpperCase();
+    if (tokenRole) {
+      if (tokenRole === 'TRABAJADOR') return fail(res, 'AUTH_ERROR', 'Acceso denegado', 403);
+      (req as any).user = { id: userId, role: tokenRole, email: payload?.email ?? null };
+      return next();
     }
-    (req as any).user = { id: profile.id, role: profile.rol, email: profile.email };
+
+    // Fallback para tokens legacy sin role: consulta única a DB.
+    const profile = await prisma.usuarios.findUnique({
+      where: { id: userId },
+      select: { id: true, rol: true, email: true },
+    });
+    if (!profile) return fail(res, 'AUTH_ERROR', 'Usuario no encontrado', 401);
+    if (String(profile.rol).toUpperCase() === 'TRABAJADOR') return fail(res, 'AUTH_ERROR', 'Acceso denegado', 403);
+    (req as any).user = { id: profile.id, role: String(profile.rol).toUpperCase(), email: profile.email };
     next();
   } catch (err) {
     return fail(res, 'AUTH_ERROR', 'Token inválido', 401);

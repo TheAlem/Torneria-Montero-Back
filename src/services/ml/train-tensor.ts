@@ -26,15 +26,48 @@ async function loadTensorFlow(): Promise<TFModule> {
 
 export async function trainLinearDurationModelTF(limit = 1000) {
   const tf = await tfPromise;
-  const rows = await prisma.tiempos.findMany({
+  const rawRows = await prisma.tiempos.findMany({
     where: { estado: 'CERRADO', duracion_sec: { not: null } },
     include: {
-      pedido: { select: { prioridad: true, precio: true, descripcion: true } },
+      pedido: { select: { id: true, prioridad: true, precio: true, descripcion: true, estado: true } },
       trabajador: { select: { skills: true, carga_actual: true, fecha_ingreso: true } },
     },
     orderBy: { id: 'desc' },
-    take: limit,
+    take: Math.max(limit * 4, limit),
   });
+
+  const grouped = new Map<string, {
+    pedido: { prioridad: 'ALTA' | 'MEDIA' | 'BAJA'; precio: any; descripcion: string | null };
+    trabajador: { skills: any; carga_actual: number | null; fecha_ingreso: Date | null } | null;
+    duracion_sec: number;
+    maxId: number;
+  }>();
+  for (const r of rawRows) {
+    if (!r.pedido || r.pedido.estado !== 'ENTREGADO') continue;
+    const key = `${r.pedido_id}:${r.trabajador_id}`;
+    const prev = grouped.get(key) ?? {
+      pedido: {
+        prioridad: r.pedido.prioridad as any,
+        precio: r.pedido.precio,
+        descripcion: r.pedido.descripcion ?? null,
+      },
+      trabajador: (r as any).trabajador ?? null,
+      duracion_sec: 0,
+      maxId: 0,
+    };
+    prev.duracion_sec += Number(r.duracion_sec || 0);
+    prev.maxId = Math.max(prev.maxId, r.id);
+    grouped.set(key, prev);
+  }
+
+  const rows = Array.from(grouped.values())
+    .sort((a, b) => b.maxId - a.maxId)
+    .slice(0, limit)
+    .map(r => ({
+      pedido: r.pedido,
+      trabajador: r.trabajador,
+      duracion_sec: r.duracion_sec,
+    }));
 
   if (!rows.length) {
     const priors = { ALTA: 8 * 3600, MEDIA: 6 * 3600, BAJA: 5 * 3600 };
@@ -50,14 +83,30 @@ export async function trainLinearDurationModelTF(limit = 1000) {
     return { count: 0, path, model, mae: null } as any;
   }
 
-  // 1) Construir features exactamente igual que en el trainer actual
-  const samples = rows.map(r =>
+  // 1) Construir features y filtrar outliers por rango operativo
+  const rawSamples = rows.map(r =>
     buildBaseAndExtraFeatures({
       pedido: r.pedido as any,
       tiempo: r as any,
       trabajador: (r as any).trabajador ?? null,
     })
   );
+  const minSec = getMinSeconds();
+  const maxSec = getMaxSeconds();
+  const samples = rawSamples.filter(s => Number.isFinite(s.y) && s.y >= minSec && s.y <= maxSec);
+  if (!samples.length) {
+    const priors = { ALTA: 8 * 3600, MEDIA: 6 * 3600, BAJA: 5 * 3600 };
+    const model: LinearModel = {
+      version: 'v1.2-tf',
+      trainedAt: new Date().toISOString(),
+      algo: 'linear-regression-v1',
+      coef: [4 * 3600, 0, 0, 0],
+      meta: { names: ['bias', 'prio_ALTA', 'prio_MEDIA', 'precio'], precioScale: null, priors },
+    };
+    const path = saveModel(model);
+    await saveModelToDB(model, { total: 0, mae: null });
+    return { count: 0, path, model, mae: null } as any;
+  }
 
   const Xbase = samples.map(s => s.xBase); // [bias, isAlta, isMedia, precio]
   const extras = samples.map(s => s.extraX);
@@ -78,11 +127,11 @@ export async function trainLinearDurationModelTF(limit = 1000) {
     MEDIA: median(yMedia) ?? defaultPriors.MEDIA,
     BAJA: median(yBaja) ?? defaultPriors.BAJA,
   };
-  const needAnchors = rows.length < 60;
+  const needAnchors = samples.length < 60;
   if (needAnchors) {
     const anchorPrice = median(Xbase.map(r => r[3] ?? 0)) ?? 0;
     const anchorExtras = Array(extras[0]?.length || 0).fill(0);
-    const repeats = Math.max(3, Math.ceil(30 / Math.max(1, rows.length)));
+    const repeats = Math.max(3, Math.ceil(30 / Math.max(1, samples.length)));
     const addAnchor = (prio: 'ALTA'|'MEDIA'|'BAJA', target: number) => {
       const isAlta = prio === 'ALTA' ? 1 : 0;
       const isMedia = prio === 'MEDIA' ? 1 : 0;
@@ -97,10 +146,8 @@ export async function trainLinearDurationModelTF(limit = 1000) {
     addAnchor('BAJA', priors.BAJA);
   }
 
-  // Clamp target para robustez (igual que código actual)
-  const minSec = getMinSeconds();
-  const maxSec = getMaxSeconds();
-  const yClamped = yBase.map(v => Math.min(maxSec, Math.max(minSec, v)));
+  // Ya filtrado por rango operativo
+  const yClamped = yBase;
 
   // 2) Shuffle/split índices (80/20)
   const idx = Array.from({ length: Xbase.length }, (_, i) => i);
@@ -265,10 +312,10 @@ export async function trainLinearDurationModelTF(limit = 1000) {
   };
 
   const path = saveModel(model);
-  await saveModelToDB(model, { total: rows.length, mae: mae_valid ?? null, precision: mae_train ?? null });
+  await saveModelToDB(model, { total: samples.length, mae: mae_valid ?? null, precision: mae_train ?? null });
 
   // Liberar tensores
   tf.dispose([XtrTensor, ytrTensor, XvaTensor, yvaTensor, yhatVaTensor, yhatTrTensor]);
 
-  return { count: rows.length, path, model, mae: mae_valid, mae_train, mae_valid, mape_valid } as any;
+  return { count: samples.length, path, model, mae: mae_valid, mae_train, mae_valid, mape_valid } as any;
 }
