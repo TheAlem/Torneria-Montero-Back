@@ -1,7 +1,7 @@
 import { prisma } from '../prisma/client.js';
 import { CreatePedidoBody } from '../validators/pedidoValidator.js';
 import { recalcPedidoEstimate } from './MLService.js';
-import { buildDetalleFromPayload, buildNotasFromDetalle, parseNotasToDetalle } from './PedidoDetails.js';
+import { buildDetalleFromPayload, buildNotasFromDetalle } from './PedidoDetails.js';
 import { scheduleEvaluatePedidos } from './KanbanMonitorService.js';
 
 async function resolveClienteId(payload: CreatePedidoBody): Promise<number> {
@@ -44,7 +44,7 @@ async function resolveClienteId(payload: CreatePedidoBody): Promise<number> {
 
 export async function createPedido(payload: CreatePedidoBody) {
   const clienteId = await resolveClienteId(payload);
-  const titulo = payload.titulo || payload.descripcion;
+  const titulo = payload.titulo;
   const { detalle, hasDetalle } = buildDetalleFromPayload(payload);
   let notas = (payload as any).notas ?? null;
   const data: any = {
@@ -61,8 +61,6 @@ export async function createPedido(payload: CreatePedidoBody) {
   if (hasDetalle) {
     data.detalle_trabajo = detalle;
     notas = buildNotasFromDetalle(detalle);
-  } else if (typeof notas === 'string' && notas.trim()) {
-    data.detalle_trabajo = parseNotasToDetalle(notas);
   }
   if (typeof notas === 'string' && notas.trim()) data.notas = notas;
 

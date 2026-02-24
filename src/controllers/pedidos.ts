@@ -8,8 +8,13 @@ import RealtimeService from '../realtime/RealtimeService.js';
 import { resolveClienteIdentity } from '../services/ClienteIdentityService.js';
 import * as ClientNotificationService from '../services/ClientNotificationService.js';
 import { recalcPedidoEstimate } from '../services/MLService.js';
-import { buildDetalleFromPayload, buildNotasFromDetalle, normalizeDetalleTrabajo, parseNotasToDetalle } from '../services/PedidoDetails.js';
+import { buildDetalleFromPayload, buildNotasFromDetalle, normalizeDetalleTrabajo } from '../services/PedidoDetails.js';
 import { scheduleEvaluatePedidos } from '../services/KanbanMonitorService.js';
+
+const enrichPedidoDetalle = (pedido: any) => {
+  const detalle = normalizeDetalleTrabajo(pedido?.detalle_trabajo);
+  return { ...(pedido as any), ...detalle, detalle_trabajo: detalle };
+};
 
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -24,7 +29,8 @@ export const listar = async (req: Request, res: Response, next: NextFunction) =>
       take: Number(limit),
     });
     const total = await prisma.pedidos.count({ where });
-    return success(res, { pedidos, total, page: Number(page), limit: Number(limit) });
+    const pedidosOut = pedidos.map(enrichPedidoDetalle);
+    return success(res, { pedidos: pedidosOut, total, page: Number(page), limit: Number(limit) });
   } catch (err) { next(err); }
 };
 
@@ -49,7 +55,8 @@ export const listarDelCliente = async (req: Request, res: Response, next: NextFu
       take: Number(limit),
     });
     const total = await prisma.pedidos.count({ where });
-    return success(res, { pedidos, total, page: Number(page), limit: Number(limit) });
+    const pedidosOut = pedidos.map(enrichPedidoDetalle);
+    return success(res, { pedidos: pedidosOut, total, page: Number(page), limit: Number(limit) });
   } catch (err) { next(err); }
 };
 
@@ -90,9 +97,8 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
       })),
       auto_update_eta_enabled: String(process.env.ETA_AUTO_UPDATE_ENABLED ?? 'false').toLowerCase() === 'true',
     };
-    const detalle = normalizeDetalleTrabajo((pedido as any).detalle_trabajo, (pedido as any).notas);
-    const notas = (pedido as any).notas ?? (detalle ? buildNotasFromDetalle(detalle) : null);
-    return success(res, { ...(pedido as any), ...detalle, detalle_trabajo: detalle, notas, eta_tracking: etaTracking });
+    const pedidoOut = enrichPedidoDetalle(pedido as any);
+    return success(res, { ...pedidoOut, eta_tracking: etaTracking });
   } catch (err) { next(err); }
 };
 
@@ -123,9 +129,7 @@ export const crear = async (req: Request, res: Response, next: NextFunction) => 
         });
       }
     } catch {}
-    const detalle = normalizeDetalleTrabajo((pedido as any)?.detalle_trabajo, (pedido as any)?.notas);
-    const notas = (pedido as any)?.notas ?? (detalle ? buildNotasFromDetalle(detalle) : null);
-    return success(res, { ...(pedido as any), ...detalle, detalle_trabajo: detalle, notas }, 201);
+    return success(res, enrichPedidoDetalle(pedido as any), 201);
   } catch (err: any) {
     if (err?.name === 'ZodError') return fieldsValidation(res, err.errors ?? err);
     next(err);
@@ -162,8 +166,6 @@ export const actualizar = async (req: Request, res: Response, next: NextFunction
     if (hasDetalle) {
       data.detalle_trabajo = detalle;
       data.notas = buildNotasFromDetalle(detalle);
-    } else if (typeof body.notas === 'string') {
-      data.detalle_trabajo = parseNotasToDetalle(body.notas);
     }
     if (typeof body.titulo !== 'undefined' || typeof body.descripcion !== 'undefined' || typeof body.prioridad !== 'undefined' || typeof body.precio !== 'undefined' || typeof body.responsable_id !== 'undefined') {
       needsRecalc = true;
@@ -232,9 +234,7 @@ export const actualizar = async (req: Request, res: Response, next: NextFunction
         });
       }
     } catch {}
-    const detalleOut = normalizeDetalleTrabajo((pedido as any)?.detalle_trabajo, (pedido as any)?.notas);
-    const notasOut = (pedido as any)?.notas ?? (detalleOut ? buildNotasFromDetalle(detalleOut) : null);
-    return success(res, { ...(pedido as any), ...detalleOut, detalle_trabajo: detalleOut, notas: notasOut }, 200, 'Pedido actualizado');
+    return success(res, enrichPedidoDetalle(pedido as any), 200, 'Pedido actualizado');
   } catch (err) { next(err); }
 };
 

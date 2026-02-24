@@ -33,7 +33,7 @@ export const CreatePedidoSchema = z.object({
   pagado: z.boolean().optional(),
   notas: z.string().optional(),
   ...DetalleTrabajoSchema.shape,
-}).refine((data) => !!data.cliente_id || !!data.cliente, {
+}).strict().refine((data) => !!data.cliente_id || !!data.cliente, {
   message: 'Debe proporcionar cliente_id o un objeto cliente',
   path: ['cliente'],
 });
@@ -53,6 +53,6 @@ export const UpdatePedidoSchema = z.object({
   adjuntos: z.array(z.string()).optional(),
   pagado: z.boolean().optional(),
   ...DetalleTrabajoSchema.shape,
-});
+}).strict();
 
 export type UpdatePedidoBody = z.infer<typeof UpdatePedidoSchema>;

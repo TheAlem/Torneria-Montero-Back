@@ -2,6 +2,15 @@ import type { Request, Response, NextFunction } from 'express';
 import { prisma } from '../prisma/client.js';
 import { success, fail, fieldsValidation } from '../utils/response.js';
 
+const toOptionalText = (val: unknown): string | null => {
+  if (val === null || typeof val === 'undefined') return null;
+  const text = String(val).trim();
+  return text ? text : null;
+};
+
+const CREATE_FIELDS = new Set(['nombre', 'email', 'telefono', 'direccion', 'ci_rut']);
+const UPDATE_FIELDS = new Set(['nombre', 'email', 'telefono', 'direccion', 'ci_rut', 'estado', 'verificado']);
+
 export const listar = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const clients = await prisma.clientes.findMany();
@@ -43,6 +52,12 @@ export const buscar = async (req: Request, res: Response, next: NextFunction) =>
 
 export const crear = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const body = (req.body ?? {}) as Record<string, any>;
+    const unknown = Object.keys(body).filter(k => !CREATE_FIELDS.has(k));
+    if (unknown.length) {
+      return fieldsValidation(res, { body: `Campos no permitidos: ${unknown.join(', ')}` });
+    }
+
     const { nombre, email, telefono, direccion, ci_rut } = req.body;
     if (!nombre || !telefono) {
       const errors: any = {};
@@ -70,10 +85,47 @@ export const obtener = async (req: Request, res: Response, next: NextFunction) =
 export const actualizar = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = Number(req.params.id);
-    const { name, email, phone, address } = req.body;
-    const client = await prisma.clientes.update({ where: { id }, data: { nombre: name, email, telefono: phone, direccion: address } });
+    if (!Number.isFinite(id)) return fail(res, 'VALIDATION_ERROR', 'ID de cliente inválido', 400);
+
+    const body = (req.body ?? {}) as Record<string, any>;
+    const unknown = Object.keys(body).filter(k => !UPDATE_FIELDS.has(k));
+    if (unknown.length) {
+      return fieldsValidation(res, { body: `Campos no permitidos: ${unknown.join(', ')}` });
+    }
+    const data: any = {};
+
+    if (typeof body.nombre !== 'undefined') {
+      const nombre = toOptionalText(body.nombre);
+      if (!nombre) return fieldsValidation(res, { nombre: 'El campo nombre no puede estar vacío.' });
+      data.nombre = nombre;
+    }
+    if (typeof body.email !== 'undefined') data.email = toOptionalText(body.email);
+    if (typeof body.telefono !== 'undefined') data.telefono = toOptionalText(body.telefono);
+    if (typeof body.direccion !== 'undefined') data.direccion = toOptionalText(body.direccion);
+    if (typeof body.ci_rut !== 'undefined') data.ci_rut = toOptionalText(body.ci_rut);
+    if (typeof body.estado !== 'undefined') {
+      const estado = toOptionalText(body.estado);
+      if (!estado) return fieldsValidation(res, { estado: 'El campo estado no puede estar vacío.' });
+      data.estado = estado;
+    }
+    if (typeof body.verificado !== 'undefined') {
+      if (typeof body.verificado !== 'boolean') {
+        return fieldsValidation(res, { verificado: 'El campo verificado debe ser booleano.' });
+      }
+      data.verificado = body.verificado;
+    }
+
+    if (!Object.keys(data).length) {
+      return fail(res, 'VALIDATION_ERROR', 'No hay campos para actualizar', 422);
+    }
+
+    const client = await prisma.clientes.update({ where: { id }, data });
     return success(res, client);
-  } catch (err) { next(err); }
+  } catch (err: any) {
+    if (err?.code === 'P2025') return fail(res, 'NOT_FOUND', 'Cliente no encontrado', 404);
+    if (err?.code === 'P2002') return fail(res, 'UNIQUE_CONSTRAINT', 'Ya existe un registro con estos datos únicos.', 409);
+    next(err);
+  }
 };
 
 export const eliminar = async (req: Request, res: Response, next: NextFunction) => {
