@@ -116,8 +116,7 @@ router.get('/:id', authenticate, ctrl.getById);
  *                 description: Trabajador responsable (opcional)
  *               fecha_estimada_fin:
  *                 type: string
- *                 format: date
- *                 description: YYYY-MM-DD
+ *                 description: YYYY-MM-DD o fecha-hora (ej: 2026-02-25T15, 2026-02-25T15:30, 2026-02-25T15:30:00Z)
  *               precio:
  *                 type: number
  *                 description: Precio estimado del trabajo
@@ -129,7 +128,7 @@ router.get('/:id', authenticate, ctrl.getById);
  *                 nombre: "Industrias ABC"
  *                 telefono: "+59170000000"
  *               responsable_id: 3
- *               fecha_estimada_fin: "2025-11-05"
+ *               fecha_estimada_fin: "2025-11-05T15:30"
  *               precio: 1200
  *     responses:
  *       '201':
@@ -173,7 +172,7 @@ router.post('/', authenticate, ctrl.crear);
  *               descripcion: { type: string }
  *               prioridad: { type: string, enum: [BAJA, MEDIA, ALTA] }
  *               precio: { type: number, nullable: true }
- *               fecha_estimada_fin: { type: string, description: 'YYYY-MM-DD', nullable: true }
+ *               fecha_estimada_fin: { type: string, description: 'YYYY-MM-DD o fecha-hora (ej: 2026-02-25T15, 2026-02-25T15:30, 2026-02-25T15:30:00Z)', nullable: true }
  *               estado: { type: string, enum: [PENDIENTE, ASIGNADO, EN_PROGRESO, QA, ENTREGADO] }
  *               responsable_id: { type: integer, nullable: true }
  *               semaforo: { type: string, enum: [VERDE, AMARILLO, ROJO] }

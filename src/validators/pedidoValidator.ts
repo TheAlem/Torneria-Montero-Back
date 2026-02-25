@@ -1,5 +1,29 @@
 import { z } from 'zod';
 
+const FechaISODateSchema = z.iso.date();
+const FechaISODateTimeSchema = z.iso.datetime({ local: true, offset: true });
+const FechaHoraSoloHoraRegex = /^(\d{4}-\d{2}-\d{2})T(\d{2})$/;
+
+const normalizeFechaEstimadaFin = (raw: string) => {
+  const value = raw.trim();
+  const onlyHourMatch = value.match(FechaHoraSoloHoraRegex);
+  if (onlyHourMatch) return `${onlyHourMatch[1]}T${onlyHourMatch[2]}:00`;
+  return value;
+};
+
+const FechaEstimadaFinSchema = z
+  .string()
+  .trim()
+  .transform((value) => normalizeFechaEstimadaFin(value))
+  .refine((value) => {
+    return (
+      FechaISODateSchema.safeParse(value).success
+      || FechaISODateTimeSchema.safeParse(value).success
+    );
+  }, {
+    message: 'Debe ser YYYY-MM-DD o fecha-hora ISO 8601 valida (ej: 2026-02-25T15:30 o 2026-02-25T15:30:00Z)',
+  });
+
 const ClienteInlineSchema = z.object({
   nombre: z.string().min(1),
   ci_rut: z.string().min(3).optional(),
@@ -28,7 +52,7 @@ export const CreatePedidoSchema = z.object({
   cliente_id: z.number().int().optional(),
   cliente: ClienteInlineSchema.optional(),
   responsable_id: z.number().int().optional(),
-  fecha_estimada_fin: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  fecha_estimada_fin: FechaEstimadaFinSchema.optional(),
   precio: z.number().positive().optional(),
   pagado: z.boolean().optional(),
   notas: z.string().optional(),
@@ -45,7 +69,7 @@ export const UpdatePedidoSchema = z.object({
   descripcion: z.string().min(1).optional(),
   prioridad: z.enum(['BAJA', 'MEDIA', 'ALTA']).optional(),
   precio: z.number().positive().nullable().optional(),
-  fecha_estimada_fin: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  fecha_estimada_fin: FechaEstimadaFinSchema.nullable().optional(),
   estado: z.enum(['PENDIENTE','ASIGNADO','EN_PROGRESO','QA','ENTREGADO']).optional(),
   responsable_id: z.number().int().nullable().optional(),
   semaforo: z.enum(['VERDE','AMARILLO','ROJO']).optional(),
