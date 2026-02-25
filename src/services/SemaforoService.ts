@@ -164,10 +164,29 @@ export async function getTiempoRealSec(pedidoId: number): Promise<number> {
   const registros = await prisma.tiempos.findMany({
     where: { pedido_id: pedidoId },
     orderBy: { id: 'asc' },
-    select: { duracion_sec: true, estado: true, inicio: true, trabajador_id: true }
+    select: { duracion_sec: true, estado: true, inicio: true, fin: true, trabajador_id: true }
   });
 
-  const cerrados = registros.filter(r => r.estado === 'CERRADO' && typeof r.duracion_sec === 'number').reduce((a, b) => a + (b.duracion_sec || 0), 0);
+  const scheduleCache = new Map<number, { shifts: Shift[]; workdays?: Set<number> } | null>();
+  const getScheduleCached = async (workerId: number) => {
+    if (!scheduleCache.has(workerId)) {
+      scheduleCache.set(workerId, await getWorkerSchedule(workerId));
+    }
+    return scheduleCache.get(workerId) ?? null;
+  };
+
+  let cerrados = 0;
+  for (const r of registros) {
+    if (r.estado !== 'CERRADO') continue;
+    if (r.inicio && r.fin) {
+      const schedule = await getScheduleCached(r.trabajador_id);
+      cerrados += businessSecondsBetween(new Date(r.inicio), new Date(r.fin), schedule?.shifts, schedule?.workdays);
+      continue;
+    }
+    if (typeof r.duracion_sec === 'number' && Number.isFinite(r.duracion_sec)) {
+      cerrados += Math.max(0, r.duracion_sec || 0);
+    }
+  }
 
   // Para el abierto, calculamos usando el horario del trabajador
   const abierto = registros.find(r => r.estado === 'ABIERTO');
