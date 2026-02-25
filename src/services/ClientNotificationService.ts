@@ -51,7 +51,7 @@ export async function createNotification(args: CreateNotificationArgs) {
     } catch {}
 
     try {
-      await sendToCliente(args.clienteId, {
+      const ok = await sendToCliente(args.clienteId, {
         title: buildTitle(payload.tipo, args.title),
         body: notif.mensaje,
         data: {
@@ -60,7 +60,12 @@ export async function createNotification(args: CreateNotificationArgs) {
           ...(args.data ?? {}),
         },
       });
-    } catch {}
+      if (!ok) {
+        logger.warn({ msg: '[ClientNotificationService] Push not delivered', clienteId: args.clienteId, pedidoId: args.pedidoId, tipo: payload.tipo });
+      }
+    } catch (err) {
+      logger.warn({ msg: '[ClientNotificationService] Push send threw', clienteId: args.clienteId, pedidoId: args.pedidoId, err: (err as any)?.message });
+    }
 
     return notif;
   } catch (err) {
