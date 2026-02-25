@@ -6,9 +6,9 @@ import ClientNotificationService from './ClientNotificationService.js';
 
 export type SemaforoColor = 'VERDE' | 'AMARILLO' | 'ROJO';
 
-// Configuración de jornada laboral (por defecto 08:00-12:30 y 14:00-18:00, lun-sáb; sábado puede ser distinto)
+// Configuración de jornada laboral (por defecto 08:00-12:00 y 13:00-18:00, lun-sáb)
 const WORK_DAYS = process.env.WORKDAYS || '1-6'; // 0=domingo ... 6=sábado; default lun-sab
-const WORKDAY_SHIFTS_STR = process.env.WORKDAY_SHIFTS || '08:00-12:30,14:00-18:00';
+const WORKDAY_SHIFTS_STR = process.env.WORKDAY_SHIFTS || '08:00-12:00,13:00-18:00';
 const WORKDAY_SHIFTS_SAT = process.env.WORKDAY_SHIFTS_SAT; // opcional, ej. "08:00-12:00"
 
 const parseHHMM = (v: string): { h: number; m: number } => {
@@ -66,24 +66,42 @@ function isWorkDay(d: Date) {
   return workdaysSet.has(d.getDay());
 }
 
-function getShiftsForDay(dayIdx: number): Shift[] {
-  if (!workdaysSet.has(dayIdx)) return [];
-  if (dayIdx === 6 && saturdayShifts.length) return saturdayShifts; // sábado
+function getShiftsForDay(dayIdx: number, customShifts?: Shift[], customWorkdays?: Set<number>): Shift[] {
+  const wd = customWorkdays || workdaysSet;
+  if (!wd.has(dayIdx)) return [];
+  if (customShifts && customShifts.length) return customShifts; // Si es custom, usamos el mismo para todos los días laborales (simplificación)
+  if (dayIdx === 6 && saturdayShifts.length) return saturdayShifts; // sábado default
   return globalShifts;
+}
+
+export async function getWorkerSchedule(workerId: number): Promise<{ shifts: Shift[]; workdays?: Set<number> } | null> {
+  try {
+    const w = await prisma.trabajadores.findUnique({ where: { id: workerId }, select: { disponibilidad: true } });
+    if (!w || !w.disponibilidad) return null;
+    // Asumimos formato simple en disponibilidad: { "shifts": ["08:00-12:00", "13:00-17:00"], "days": [1,2,3,4,5] }
+    const disp = w.disponibilidad as any;
+    const shifts = disp.shifts && Array.isArray(disp.shifts) ? parseShifts(disp.shifts.join(',')) : [];
+    const workdays = disp.days && Array.isArray(disp.days) ? new Set<number>(disp.days) : undefined;
+
+    if (shifts.length > 0) return { shifts, workdays };
+    return null;
+  } catch (e) {
+    return null;
+  }
 }
 
 /**
  * Calcula segundos laborables entre dos fechas, considerando jornada (múltiples tramos) y días hábiles.
  * No asume 24/7 para evitar sobreestimar atraso/ETA. Usa la configuración global.
  */
-export function businessSecondsBetween(start: Date, end: Date): number {
+export function businessSecondsBetween(start: Date, end: Date, customShifts?: Shift[], customWorkdays?: Set<number>): number {
   if (!start || !end || end <= start) return 0;
   let total = 0;
   let cursor = new Date(start);
   let guard = 0;
 
   while (cursor < end && guard < 370) { // guarda de ~1 año para evitar loops
-    const shifts = getShiftsForDay(cursor.getDay());
+    const shifts = getShiftsForDay(cursor.getDay(), customShifts, customWorkdays);
     if (shifts.length) {
       const dayStart = new Date(cursor);
       dayStart.setHours(0, 0, 0, 0);
@@ -98,15 +116,15 @@ export function businessSecondsBetween(start: Date, end: Date): number {
     // siguiente día al inicio de la primera jornada
     cursor = new Date(cursor);
     cursor.setDate(cursor.getDate() + 1);
-    const nextShifts = getShiftsForDay(cursor.getDay());
-    const first = nextShifts.length ? nextShifts[0] : globalShifts[0];
+    const nextShifts = getShiftsForDay(cursor.getDay(), customShifts, customWorkdays);
+    const first = nextShifts.length ? nextShifts[0] : (customShifts && customShifts.length ? customShifts[0] : globalShifts[0]);
     cursor.setHours(Math.floor(first.startMin / 60), first.startMin % 60, 0, 0);
     guard++;
   }
   return total;
 }
 
-function getThresholds(prioridad: 'ALTA'|'MEDIA'|'BAJA'): { yellow: number; red: number } {
+function getThresholds(prioridad: 'ALTA' | 'MEDIA' | 'BAJA'): { yellow: number; red: number } {
   const baseYellow = Number(process.env.SEMAFORO_RATIO_YELLOW || 0.7);
   const baseRed = Number(process.env.SEMAFORO_RATIO_RED || 1.0);
   if (prioridad === 'ALTA') {
@@ -122,11 +140,19 @@ export async function getTiempoRealSec(pedidoId: number): Promise<number> {
   const registros = await prisma.tiempos.findMany({
     where: { pedido_id: pedidoId },
     orderBy: { id: 'asc' },
-    select: { duracion_sec: true, estado: true, inicio: true }
+    select: { duracion_sec: true, estado: true, inicio: true, trabajador_id: true }
   });
+
   const cerrados = registros.filter(r => r.estado === 'CERRADO' && typeof r.duracion_sec === 'number').reduce((a, b) => a + (b.duracion_sec || 0), 0);
+
+  // Para el abierto, calculamos usando el horario del trabajador
   const abierto = registros.find(r => r.estado === 'ABIERTO');
-  const abiertoSec = abierto?.inicio ? Math.max(0, Math.round((now - new Date(abierto.inicio).getTime()) / 1000)) : 0;
+  let abiertoSec = 0;
+  if (abierto && abierto.inicio) {
+    const workerSchedule = await getWorkerSchedule(abierto.trabajador_id);
+    abiertoSec = businessSecondsBetween(new Date(abierto.inicio), new Date(now), workerSchedule?.shifts, workerSchedule?.workdays);
+  }
+
   return cerrados + abiertoSec;
 }
 
@@ -139,8 +165,7 @@ export async function computeSemaforoForPedido(pedidoId: number): Promise<{
   ratioAdjusted: number;
   complexityScore: number;
   loadRatio: number;
-}>
-{
+}> {
   const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId }, select: { fecha_estimada_fin: true, prioridad: true, responsable_id: true, descripcion: true } });
   if (!pedido || !pedido.fecha_estimada_fin) {
     return { color: 'VERDE', tRealSec: 0, tEstimadoSec: 0, slackSec: Number.MAX_SAFE_INTEGER, ratio: 0, ratioAdjusted: 0, complexityScore: 0, loadRatio: 0 };
@@ -181,7 +206,7 @@ export async function applyAndEmitSemaforo(pedidoId: number) {
   const { color, tRealSec, tEstimadoSec, slackSec, ratio, ratioAdjusted, complexityScore, loadRatio } = await computeSemaforoForPedido(pedidoId);
   const prev = pedido.semaforo as SemaforoColor;
   if (prev !== color) {
-    await prisma.pedidos.update({ where: { id: pedidoId }, data: { semaforo: color } }).catch(() => {});
+    await prisma.pedidos.update({ where: { id: pedidoId }, data: { semaforo: color } }).catch(() => { });
     try {
       RealtimeService.emitToOperators('kanban:semaforo-changed', { pedidoId, semaforo: color, tRealSec, tEstimadoSec, slackSec, ratio, ratioAdjusted, complexityScore, loadRatio });
       if (color === 'ROJO') {
@@ -202,12 +227,12 @@ export async function applyAndEmitSemaforo(pedidoId: number) {
               title: 'Riesgo de retraso',
             });
           }
-        } catch {}
+        } catch { }
       }
-    } catch {}
+    } catch { }
     return { changed: true, prev, color, tRealSec, tEstimadoSec, slackSec, ratio };
   }
   return { changed: false, prev, color, tRealSec, tEstimadoSec, slackSec, ratio } as any;
 }
 
-export default { computeSemaforoForPedido, applyAndEmitSemaforo, getTiempoRealSec };
+export default { computeSemaforoForPedido, applyAndEmitSemaforo, getTiempoRealSec, businessSecondsBetween, getWorkerSchedule };

@@ -34,9 +34,10 @@ const router = Router();
  *             example:
  *               status: success
  *               data:
- *                 periodo: semanal
- *                 fechaGeneracion: '2025-05-01T00:00:00.000Z'
- *                 rango: { from: '2025-04-24T00:00:00.000Z', to: '2025-05-01T00:00:00.000Z' }
+ *                 periodo: Semana del 24 al 30 de abril de 2025
+ *                 periodoCodigo: semanal
+ *                 fechaGeneracion: '2025-05-01T00:00:00-04:00'
+ *                 rango: { from: '2025-04-24T00:00:00-04:00', to: '2025-05-01T00:00:00-04:00' }
  *                 datos:
  *                   total: 12
  *                   gananciaTotal: 3200
@@ -50,9 +51,9 @@ const router = Router();
  *                   topResponsables: [{ id: 2, nombre: 'Juan', total: 5, completados: 3, enProceso: 1, atrasados: 1 }]
  *                   topClientes: [{ id: 5, nombre: 'Cliente ABC', total: 4, completados: 2, enProceso: 1, atrasados: 1 }]
  *                   entregasRecientes:
- *                     - { id: 10, titulo: 'Reparar eje', cliente: 'ABC', responsable: 'Juan', prioridad: 'ALTA', estado: 'ENTREGADO', semaforo: 'VERDE', fecha_inicio: '2025-04-27T00:00:00.000Z', fecha_estimada_fin: '2025-04-29T00:00:00.000Z', fecha_entrega: '2025-04-28T18:00:00.000Z', tiempo_estimado_sec: 72000, tiempo_real_sec: 65000, atraso_sec: -7000 }
+ *                     - { id: 10, titulo: 'Reparar eje', cliente: 'ABC', responsable: 'Juan', prioridad: 'ALTA', estado: 'ENTREGADO', semaforo: 'VERDE', fecha_inicio: '2025-04-27T00:00:00-04:00', fecha_estimada_fin: '2025-04-29T00:00:00-04:00', fecha_entrega: '2025-04-28T18:00:00-04:00', tiempo_estimado_sec: 72000, tiempo_real_sec: 65000, atraso_sec: -7000 }
  *                   trabajos:
- *                     - { id: 10, titulo: 'Reparar eje', descripcion: 'Rectificado...', estado: 'ENTREGADO', prioridad: 'ALTA', semaforo: 'VERDE', fecha_inicio: '2025-04-27T00:00:00.000Z', fecha_estimada_fin: '2025-04-29T00:00:00.000Z', fecha_actualizacion: '2025-04-28T18:00:00.000Z', tiempo_estimado_sec: 72000, tiempo_real_sec: 65000, cliente_id: 5, responsable_id: 2, precio: 800, monto: 800, importe: 800, estado_pago: 'PAGADO', paymentStatus: 'PAGADO', notas: null, cliente: { id: 5, nombre: 'Cliente ABC', direccion: 'Calle 1', telefono: '7000' }, responsable: { id: 2, rol_tecnico: 'Soldador', usuario: { nombre: 'Juan' }, direccion: 'Av 2' } }
+ *                     - { id: 10, codigo: 'P-010', titulo: 'Reparar eje', descripcion: 'Rectificado...', cliente: { nombre: 'Cliente ABC' }, responsable: { id: 2, nombre: 'Juan' }, responsable_id: 2, estado: 'ENTREGADO', prioridad: 'ALTA', semaforo: 'VERDE', fecha_inicio: '2025-04-27T00:00:00-04:00', fecha_estimada_fin: '2025-04-29T00:00:00-04:00', fecha_actualizacion: '2025-04-28T18:00:00-04:00', tiempo_estimado_sec: 72000, tiempo_real_sec: 65000, cliente_id: 5, precio: '800', monto: 800, importe: 800, estado_pago: 'PAGADO', paymentStatus: 'PAGADO', notas: null }
  */
 router.get('/semanal', authenticate, ctrl.semanal);
 

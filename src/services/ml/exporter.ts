@@ -26,12 +26,27 @@ export async function exportDuracionesCSV(limit?: number) {
     return Number.isFinite(envLim) ? Math.max(100, envLim) : 2000;
   })();
 
-  const rows = await prisma.tiempos.findMany({
+  const rawRows = await prisma.tiempos.findMany({
     where: { estado: 'CERRADO', duracion_sec: { not: null } },
-    include: { pedido: { select: { prioridad: true, precio: true } } },
+    include: { pedido: { select: { id: true, prioridad: true, precio: true, estado: true } } },
     orderBy: { id: 'desc' },
-    take,
+    take: Math.max(take * 4, take),
   });
+
+  const grouped = new Map<number, { prioridad: string; precio: number; duracion: number; maxId: number }>();
+  for (const r of rawRows) {
+    if (!r.pedido || r.pedido.estado !== 'ENTREGADO') continue;
+    const prev = grouped.get(r.pedido_id) ?? {
+      prioridad: String(r.pedido.prioridad || 'BAJA').toUpperCase(),
+      precio: toNumber((r as any).pedido?.precio),
+      duracion: 0,
+      maxId: 0,
+    };
+    prev.duracion += Number(r.duracion_sec || 0);
+    prev.maxId = Math.max(prev.maxId, r.id);
+    grouped.set(r.pedido_id, prev);
+  }
+  const rows = Array.from(grouped.values()).sort((a, b) => b.maxId - a.maxId).slice(0, take);
 
   ensureDatasetsDir();
   const outPath = path.join(datasetsDir(), 'duraciones.csv');
@@ -39,9 +54,9 @@ export async function exportDuracionesCSV(limit?: number) {
   const header = 'prioridad,precio,duracion_sec';
   const lines = [header];
   for (const r of rows) {
-    const prioridad = String(r.pedido?.prioridad || 'BAJA').toUpperCase();
-    const precio = toNumber((r as any).pedido?.precio);
-    const dur = Number(r.duracion_sec || 0);
+    const prioridad = r.prioridad;
+    const precio = r.precio;
+    const dur = Number(r.duracion || 0);
     lines.push(`${prioridad},${precio},${dur}`);
   }
 

@@ -60,15 +60,46 @@ function invertMatrix(M: number[][]): number[][] | null {
 }
 
 export async function trainLinearDurationModel(limit = 1000) {
-  const rows = await prisma.tiempos.findMany({
+  const rawRows = await prisma.tiempos.findMany({
     where: { estado: 'CERRADO', duracion_sec: { not: null } },
     include: {
-      pedido: { select: { prioridad: true, precio: true, descripcion: true } },
+      pedido: { select: { id: true, prioridad: true, precio: true, descripcion: true, estado: true } },
       trabajador: { select: { skills: true, carga_actual: true, fecha_ingreso: true } }
     },
     orderBy: { id: 'desc' },
-    take: limit,
+    take: Math.max(limit * 4, limit),
   });
+  const grouped = new Map<string, {
+    pedido: { prioridad: 'ALTA' | 'MEDIA' | 'BAJA'; precio: any; descripcion: string | null };
+    trabajador: { skills: any; carga_actual: number | null; fecha_ingreso: Date | null } | null;
+    duracion_sec: number;
+    maxId: number;
+  }>();
+  for (const r of rawRows) {
+    if (!r.pedido || r.pedido.estado !== 'ENTREGADO') continue;
+    const key = `${r.pedido_id}:${r.trabajador_id}`;
+    const prev = grouped.get(key) ?? {
+      pedido: {
+        prioridad: r.pedido.prioridad as any,
+        precio: r.pedido.precio,
+        descripcion: r.pedido.descripcion ?? null,
+      },
+      trabajador: (r as any).trabajador ?? null,
+      duracion_sec: 0,
+      maxId: 0,
+    };
+    prev.duracion_sec += Number(r.duracion_sec || 0);
+    prev.maxId = Math.max(prev.maxId, r.id);
+    grouped.set(key, prev);
+  }
+  const rows = Array.from(grouped.values())
+    .sort((a, b) => b.maxId - a.maxId)
+    .slice(0, limit)
+    .map(r => ({
+      pedido: r.pedido,
+      trabajador: r.trabajador,
+      duracion_sec: r.duracion_sec,
+    }));
   if (!rows.length) {
     const model = {
       version: 'v1.2', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const,
@@ -86,8 +117,20 @@ export async function trainLinearDurationModel(limit = 1000) {
     return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
   };
 
-  // Build base (4) + extra features and target
-  const samples = rows.map(r => buildBaseAndExtraFeatures({ pedido: r.pedido as any, tiempo: r as any, trabajador: (r as any).trabajador ?? null }));
+  // Build base (4) + extra features and target, filtrando outliers por rango operativo
+  const rawSamples = rows.map(r => buildBaseAndExtraFeatures({ pedido: r.pedido as any, tiempo: r as any, trabajador: (r as any).trabajador ?? null }));
+  const minSec = getMinSeconds();
+  const maxSec = getMaxSeconds();
+  const samples = rawSamples.filter(s => Number.isFinite(s.y) && s.y >= minSec && s.y <= maxSec);
+  if (!samples.length) {
+    const model = {
+      version: 'v1.2', trainedAt: new Date().toISOString(), algo: 'linear-regression-v1' as const,
+      coef: [4 * 3600, 0, 0, 0], meta: { names: ['bias','prio_ALTA','prio_MEDIA','precio'], precioScale: null }
+    };
+    const path = saveModel(model);
+    await saveModelToDB(model, { total: 0, mae: null });
+    return { count: 0, path, model, mae: null } as any;
+  }
   const Xbase = samples.map(s => s.xBase); // [bias, isAlta, isMedia, precio]
   const yBase = samples.map(s => s.y);
   const extras = samples.map(s => s.extraX);
@@ -103,11 +146,11 @@ export async function trainLinearDurationModel(limit = 1000) {
     MEDIA: median(yMedia) ?? defaultPriors.MEDIA,
     BAJA: median(yBaja) ?? defaultPriors.BAJA,
   };
-  const needAnchors = rows.length < 60;
+  const needAnchors = samples.length < 60;
   if (needAnchors) {
     const anchorPrice = median(Xbase.map(r => r[3] ?? 0)) ?? 0;
     const anchorExtras = Array(extras[0]?.length || 0).fill(0);
-    const repeats = Math.max(3, Math.ceil(30 / Math.max(1, rows.length)));
+    const repeats = Math.max(3, Math.ceil(30 / Math.max(1, samples.length)));
     const addAnchor = (prio: 'ALTA'|'MEDIA'|'BAJA', target: number) => {
       const isAlta = prio === 'ALTA' ? 1 : 0;
       const isMedia = prio === 'MEDIA' ? 1 : 0;
@@ -122,10 +165,8 @@ export async function trainLinearDurationModel(limit = 1000) {
     addAnchor('BAJA', priors.BAJA);
   }
 
-  // Clamp target for robustness
-  const minSec = getMinSeconds();
-  const maxSec = getMaxSeconds();
-  const yClamped = yBase.map(v => Math.min(maxSec, Math.max(minSec, v)));
+  // Ya filtrado por rango operativo
+  const yClamped = yBase;
 
   // Shuffle/split indices (80/20)
   const idx = Array.from({ length: Xbase.length }, (_, i) => i);
@@ -175,8 +216,8 @@ export async function trainLinearDurationModel(limit = 1000) {
       coef: [4 * 3600, 0, 0, 0], meta: { names, precioScale: { mean, std } }
     };
     const path = saveModel(model);
-    await saveModelToDB(model, { total: rows.length, mae: null });
-    return { count: rows.length, path, model, mae: null } as any;
+    await saveModelToDB(model, { total: samples.length, mae: null });
+    return { count: samples.length, path, model, mae: null } as any;
   }
   const XtY_tr = matmul(Xt_tr, ytr);
   const B = matmul(XtXInv, XtY_tr); // shape (p x 1)
@@ -251,6 +292,6 @@ export async function trainLinearDurationModel(limit = 1000) {
     }
   };
   const path = saveModel(model);
-  await saveModelToDB(model, { total: rows.length, mae: mae_valid, precision: mae_train });
-  return { count: rows.length, path, model, mae: mae_valid, mae_train, mae_valid } as any;
+  await saveModelToDB(model, { total: samples.length, mae: mae_valid, precision: mae_train });
+  return { count: samples.length, path, model, mae: mae_valid, mae_train, mae_valid } as any;
 }

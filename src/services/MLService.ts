@@ -4,6 +4,7 @@ import { getMinSeconds, getMaxSeconds } from './ml/storage.js';
 import { parseDescripcion } from './ml/features.js';
 import { applyHeuristicAdjustments, buildEstimateInterval } from './heuristics/adjustments.js';
 import { logger } from '../utils/logger.js';
+import RealtimeService from '../realtime/RealtimeService.js';
 
 const median = (arr: number[]) => {
   if (!arr.length) return null;
@@ -18,6 +19,8 @@ export async function predictTiempoSecDetailed(
 ): Promise<{ sec: number; modelVersion: string; source: string }> {
   const MIN_SEC = getMinSeconds();
   const MAX_SEC = getMaxSeconds();
+  const HISTORY_MIN_SAME_PRIORITY = Math.max(1, Number(process.env.ML_HISTORY_MIN_SAME_PRIORITY ?? 5));
+  const HISTORY_MIN_GENERAL = Math.max(HISTORY_MIN_SAME_PRIORITY, Number(process.env.ML_HISTORY_MIN_GENERAL ?? 8));
   const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId } });
   if (!pedido) return { sec: 4 * 60 * 60, modelVersion: 'fallback', source: 'pedido_missing' }; // 4h fallback
   const workerId = trabajadorId && trabajadorId > 0 ? trabajadorId : null;
@@ -25,26 +28,49 @@ export async function predictTiempoSecDetailed(
     ? await prisma.trabajadores.findUnique({ where: { id: workerId }, select: { skills: true, carga_actual: true, fecha_ingreso: true } }).catch(() => null)
     : null;
 
-  // Preferir histórico del trabajador en pedidos de misma prioridad
+  // Histórico robusto: sumar por pedido+trabajador para evitar sesgo por tramos de tiempos.
   const tiemposTrab = workerId
     ? await prisma.tiempos.findMany({
-      where: { trabajador_id: workerId, estado: 'CERRADO' },
-      select: { duracion_sec: true, pedido: { select: { prioridad: true } } },
+      where: {
+        trabajador_id: workerId,
+        estado: 'CERRADO',
+        duracion_sec: { not: null },
+        pedido: { estado: 'ENTREGADO' },
+      },
+      select: { id: true, pedido_id: true, duracion_sec: true, pedido: { select: { prioridad: true } } },
       orderBy: { id: 'desc' },
-      take: 50,
+      take: 250,
     })
     : [];
 
-  const mismos = tiemposTrab.filter(t => !!t.duracion_sec && t.pedido?.prioridad === pedido.prioridad).map(t => t.duracion_sec!)
-    .filter(v => typeof v === 'number');
-  const generales = tiemposTrab.filter(t => !!t.duracion_sec).map(t => t.duracion_sec!)
-    .filter(v => typeof v === 'number');
+  const byPedido = new Map<number, { totalSec: number; prioridad: string | null; maxId: number }>();
+  for (const t of tiemposTrab) {
+    const current = byPedido.get(t.pedido_id) ?? { totalSec: 0, prioridad: t.pedido?.prioridad ?? null, maxId: 0 };
+    current.totalSec += Number(t.duracion_sec || 0);
+    current.maxId = Math.max(current.maxId, t.id);
+    if (!current.prioridad && t.pedido?.prioridad) current.prioridad = t.pedido.prioridad;
+    byPedido.set(t.pedido_id, current);
+  }
 
-  const arr = (mismos.length >= 5 ? mismos : generales);
-  const cleaned = arr.filter(v => typeof v === 'number' && isFinite(v) && v >= MIN_SEC && v <= MAX_SEC);
-  if (cleaned.length) {
-    const med = median(cleaned) ?? cleaned[0];
-    return { sec: Math.min(MAX_SEC, Math.max(MIN_SEC, Math.round(med))), modelVersion: 'historico', source: 'historico' };
+  const historico = Array.from(byPedido.values())
+    .sort((a, b) => b.maxId - a.maxId)
+    .slice(0, 50)
+    .map(x => ({ totalSec: x.totalSec, prioridad: x.prioridad }));
+
+  const mismos = historico
+    .filter(h => h.prioridad === pedido.prioridad)
+    .map(h => h.totalSec)
+    .filter(v => typeof v === 'number' && isFinite(v) && v >= MIN_SEC && v <= MAX_SEC);
+  const generales = historico
+    .map(h => h.totalSec)
+    .filter(v => typeof v === 'number' && isFinite(v) && v >= MIN_SEC && v <= MAX_SEC);
+
+  if (mismos.length >= HISTORY_MIN_SAME_PRIORITY || generales.length >= HISTORY_MIN_GENERAL) {
+    const arr = mismos.length >= HISTORY_MIN_SAME_PRIORITY ? mismos : generales;
+    const med = median(arr) ?? arr[0];
+    if (typeof med === 'number' && isFinite(med)) {
+      return { sec: Math.min(MAX_SEC, Math.max(MIN_SEC, Math.round(med))), modelVersion: 'historico', source: 'historico' };
+    }
   }
 
   // Intentar modelo entrenado (si existe)
@@ -170,10 +196,51 @@ export async function recalcPedidoEstimate(pedidoId: number, opts?: { trabajador
   const workerId = opts?.trabajadorId ?? pedido.responsable_id ?? null;
   const estimado = await predictTiempoSecHybridDetailed(pedidoId, workerId);
   const data: any = { tiempo_estimado_sec: estimado.adjustedSec };
-  if (opts?.updateFechaEstimada !== false && !pedido.fecha_estimada_fin) {
-    data.fecha_estimada_fin = new Date(Date.now() + estimado.adjustedSec * 1000);
+  const previousDue = pedido.fecha_estimada_fin ? new Date(pedido.fecha_estimada_fin) : null;
+  const suggestedDue = new Date(Date.now() + estimado.adjustedSec * 1000);
+  const askedToUpdateFecha = opts?.updateFechaEstimada === true
+    || (opts?.updateFechaEstimada !== false && !pedido.fecha_estimada_fin);
+  const etaAutoUpdateEnabled = String(process.env.ETA_AUTO_UPDATE_ENABLED ?? 'false').toLowerCase() === 'true';
+  const minSuggestDeltaSec = Math.max(60, Number(process.env.ETA_SUGGEST_MIN_DELTA_SEC ?? 300));
+  const deltaSec = previousDue ? Math.round((suggestedDue.getTime() - previousDue.getTime()) / 1000) : 0;
+  const absDeltaSec = Math.abs(deltaSec);
+  const shouldUpdateFecha = askedToUpdateFecha && (!previousDue || etaAutoUpdateEnabled);
+
+  if (shouldUpdateFecha) {
+    data.fecha_estimada_fin = suggestedDue;
   }
   await prisma.pedidos.update({ where: { id: pedidoId }, data }).catch(() => {});
+
+  if (askedToUpdateFecha) {
+    if (!previousDue && shouldUpdateFecha) {
+      // Primera ETA registrada automáticamente para iniciar el seguimiento.
+      try {
+        await RealtimeService.emitWebAlert(
+          'ETA_INICIAL',
+          `Pedido #${pedidoId} ETA inicial: ${suggestedDue.toISOString()}`,
+          { pedidoId, newDue: suggestedDue.toISOString(), source: 'ml_recalc' }
+        );
+      } catch {}
+    } else if (previousDue && shouldUpdateFecha && absDeltaSec >= minSuggestDeltaSec) {
+      try {
+        await RealtimeService.emitWebAlert(
+          'ETA_ACTUALIZADA',
+          `Pedido #${pedidoId} ETA actualizada de ${previousDue.toISOString()} a ${suggestedDue.toISOString()} (delta ${deltaSec}s)`,
+          { pedidoId, oldDue: previousDue.toISOString(), newDue: suggestedDue.toISOString(), deltaSec, source: 'ml_recalc' }
+        );
+      } catch {}
+    } else if (previousDue && !shouldUpdateFecha && absDeltaSec >= minSuggestDeltaSec) {
+      // Modo recomendado: no auto mover ETA; solo sugerir para aprobación manual.
+      try {
+        await RealtimeService.emitWebAlert(
+          'ETA_SUGERIDA',
+          `Pedido #${pedidoId} sugerencia ETA: ${previousDue.toISOString()} -> ${suggestedDue.toISOString()} (delta ${deltaSec}s). Requiere confirmación manual.`,
+          { pedidoId, currentDue: previousDue.toISOString(), suggestedDue: suggestedDue.toISOString(), deltaSec, source: 'ml_recalc' }
+        );
+      } catch {}
+    }
+  }
+
   if (workerId) await storePrediccion(pedidoId, workerId, estimado.adjustedSec, `${estimado.modelVersion}+heur`);
   return estimado.adjustedSec;
 }

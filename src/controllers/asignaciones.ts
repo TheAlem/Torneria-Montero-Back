@@ -48,6 +48,15 @@ export const asignar = async (req: Request, res: Response, next: NextFunction) =
     dataUpdate.fecha_estimada_fin = new Date(Date.now() + tEstimado * 1000);
   }
   await prisma.pedidos.update({ where: { id: Number(pedido_id) }, data: dataUpdate });
+  if (!current?.fecha_estimada_fin && dataUpdate.fecha_estimada_fin) {
+    try {
+      RealtimeService.emitWebAlert(
+        'ETA_INICIAL',
+        `Pedido #${Number(pedido_id)} ETA inicial: ${new Date(dataUpdate.fecha_estimada_fin).toISOString()}`,
+        { pedidoId: Number(pedido_id), newDue: new Date(dataUpdate.fecha_estimada_fin).toISOString(), source: 'asignacion' }
+      );
+    } catch {}
+  }
   // Persist predicted time for learning history
   if (tEstimado) await storePrediccion(Number(pedido_id), trabajador, tEstimado, modeloVersion);
   scheduleEvaluatePedidos(Number(pedido_id));

@@ -12,6 +12,8 @@
     "prisma:migrate": "prisma migrate dev --name init",
     "openapi:generate": "tsx generate-openapi.ts",
     "ml:gen-csv": "tsx scripts/generate_train.ts",
+    "ml:diagnose": "tsx scripts/ml_diagnose.ts",
+    "ml:clean": "tsx scripts/ml_clean_outliers.ts",
     "test": "node --test --import tsx"
   },
   "keywords": [],
@@ -46,5 +48,9 @@
     "swagger-ui-express": "^5.0.1",
     "winston": "^3.9.0",
     "zod": "^4.1.11"
+  },
+  "overrides": {
+    "fast-xml-parser": "^5.3.3",
+    "tar": "^7.5.7"
   }
 }

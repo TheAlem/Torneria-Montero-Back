@@ -147,6 +147,23 @@
             "type": "number",
             "format": "float"
           },
+          "precision": {
+            "type": "number"
+          },
+          "materiales_experiencia": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "material": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
           "etaFecha": {
             "type": "string",
             "nullable": true,
@@ -162,6 +179,41 @@
             "nullable": true,
             "format": "date-time",
             "description": "ISO completa por compatibilidad"
+          },
+          "razones": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hardConstraints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tiempo_estimado_sec": {
+            "type": "number",
+            "nullable": true
+          },
+          "tiempo_estimado_base_sec": {
+            "type": "number",
+            "nullable": true
+          },
+          "tiempo_estimado_rango": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "minSec": {
+                "type": "number"
+              },
+              "maxSec": {
+                "type": "number"
+              },
+              "bufferPct": {
+                "type": "number"
+              }
+            }
           }
         }
       },
@@ -186,6 +238,41 @@
               "ROJO",
               null
             ]
+          }
+        }
+      },
+      "SupportCandidate": {
+        "type": "object",
+        "properties": {
+          "trabajadorId": {
+            "type": "integer"
+          },
+          "nombre": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rol_tecnico": {
+            "type": "string",
+            "nullable": true
+          },
+          "tareas_generales": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "motivo": {
+            "type": "string"
           }
         }
       }
@@ -302,6 +389,12 @@
                           "type": "array",
                           "items": {
                             "$ref": "#/components/schemas/Candidate"
+                          }
+                        },
+                        "apoyo_manual": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/SupportCandidate"
                           }
                         }
                       }
@@ -1650,6 +1743,24 @@
             "BearerAuth": []
           }
         ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string",
+              "example": "2025-01-01T00:00:00.000Z"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string",
+              "example": "2025-01-07T23:59:59.999Z"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Reporte semanal con KPIs (SLA, tiempos, backlog, tops, ganancia)",
@@ -1661,11 +1772,12 @@
                 "example": {
                   "status": "success",
                   "data": {
-                    "periodo": "semanal",
-                    "fechaGeneracion": "2025-05-01T00:00:00.000Z",
+                    "periodo": "Semana del 24 al 30 de abril de 2025",
+                    "periodoCodigo": "semanal",
+                    "fechaGeneracion": "2025-05-01T00:00:00-04:00",
                     "rango": {
-                      "from": "2025-04-24T00:00:00.000Z",
-                      "to": "2025-05-01T00:00:00.000Z"
+                      "from": "2025-04-24T00:00:00-04:00",
+                      "to": "2025-05-01T00:00:00-04:00"
                     },
                     "datos": {
                       "total": 12,
@@ -1734,9 +1846,9 @@
                           "prioridad": "ALTA",
                           "estado": "ENTREGADO",
                           "semaforo": "VERDE",
-                          "fecha_inicio": "2025-04-27T00:00:00.000Z",
-                          "fecha_estimada_fin": "2025-04-29T00:00:00.000Z",
-                          "fecha_entrega": "2025-04-28T18:00:00.000Z",
+                          "fecha_inicio": "2025-04-27T00:00:00-04:00",
+                          "fecha_estimada_fin": "2025-04-29T00:00:00-04:00",
+                          "fecha_entrega": "2025-04-28T18:00:00-04:00",
                           "tiempo_estimado_sec": 72000,
                           "tiempo_real_sec": 65000,
                           "atraso_sec": -7000
@@ -1745,38 +1857,32 @@
                       "trabajos": [
                         {
                           "id": 10,
+                          "codigo": "P-010",
                           "titulo": "Reparar eje",
                           "descripcion": "Rectificado...",
+                          "cliente": {
+                            "nombre": "Cliente ABC"
+                          },
+                          "responsable": {
+                            "id": 2,
+                            "nombre": "Juan"
+                          },
+                          "responsable_id": 2,
                           "estado": "ENTREGADO",
                           "prioridad": "ALTA",
                           "semaforo": "VERDE",
-                          "fecha_inicio": "2025-04-27T00:00:00.000Z",
-                          "fecha_estimada_fin": "2025-04-29T00:00:00.000Z",
-                          "fecha_actualizacion": "2025-04-28T18:00:00.000Z",
+                          "fecha_inicio": "2025-04-27T00:00:00-04:00",
+                          "fecha_estimada_fin": "2025-04-29T00:00:00-04:00",
+                          "fecha_actualizacion": "2025-04-28T18:00:00-04:00",
                           "tiempo_estimado_sec": 72000,
                           "tiempo_real_sec": 65000,
                           "cliente_id": 5,
-                          "responsable_id": 2,
-                          "precio": 800,
+                          "precio": "800",
                           "monto": 800,
                           "importe": 800,
                           "estado_pago": "PAGADO",
                           "paymentStatus": "PAGADO",
-                          "notas": null,
-                          "cliente": {
-                            "id": 5,
-                            "nombre": "Cliente ABC",
-                            "direccion": "Calle 1",
-                            "telefono": "7000"
-                          },
-                          "responsable": {
-                            "id": 2,
-                            "rol_tecnico": "Soldador",
-                            "usuario": {
-                              "nombre": "Juan"
-                            },
-                            "direccion": "Av 2"
-                          }
+                          "notas": null
                         }
                       ]
                     }
@@ -1797,6 +1903,24 @@
         "security": [
           {
             "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string",
+              "example": "2025-04-01T00:00:00.000Z"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string",
+              "example": "2025-04-30T23:59:59.999Z"
+            }
           }
         ],
         "responses": {

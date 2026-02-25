@@ -115,6 +115,7 @@ class Realtime {
     const cooldownMinMap: Record<string, number> = {
       'RETRASO': 30,           // 30 minutos para alertas de retraso
       'PROXIMA_ENTREGA': 360,  // 6 horas para proximas entregas
+      'ETA_SUGERIDA': 15,      // evitar spam de sugerencias de ETA
     };
     const cooldownMin = cooldownMinMap[type] ?? 0;
 
@@ -141,6 +142,10 @@ class Realtime {
         'ENTREGA_COMPLETADA': 'VERDE',
         'ASIGNACION': 'VERDE',
         'TRABAJO_AGREGADO': 'VERDE',
+        'ETA_INICIAL': 'VERDE',
+        'ETA_ACTUALIZADA': 'AMARILLO',
+        'ETA_ACTUALIZADA_MANUAL': 'VERDE',
+        'ETA_SUGERIDA': 'AMARILLO',
       };
       const severidad = severityMap[type] || 'VERDE';
       await prisma.alertas.create({ data: { tipo: type, severidad, descripcion: message, pedido_id: pedidoId ?? undefined } }).catch(() => {});

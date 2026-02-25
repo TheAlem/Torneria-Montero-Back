@@ -19,8 +19,8 @@ type PedidoLite = {
   precio: any;
   pagado: boolean;
   notas: string | null;
-  cliente: { id: number; nombre: string; direccion: string | null; telefono: string | null } | null;
-  responsable: { id: number; rol_tecnico: string | null; direccion: string | null; usuario: { nombre: string | null } | null } | null;
+  cliente: { nombre: string } | null;
+  responsable: { id: number; usuario: { nombre: string | null } | null } | null;
 };
 
 const countBy = (arr: any[], key: string) => {
@@ -41,11 +41,81 @@ const median = (arr: number[]) => {
 
 const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
 
-const toISO = (d: Date | null) => d ? new Date(d).toISOString() : null;
+const pad2 = (value: number) => String(value).padStart(2, '0');
+const MONTHS_ES = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+];
+
+const toISO = (d: Date | null) => {
+  if (!d) return null;
+  const date = new Date(d);
+  const year = date.getFullYear();
+  const month = pad2(date.getMonth() + 1);
+  const day = pad2(date.getDate());
+  const hours = pad2(date.getHours());
+  const minutes = pad2(date.getMinutes());
+  const seconds = pad2(date.getSeconds());
+  const tzMinutes = -date.getTimezoneOffset();
+  const tzSign = tzMinutes >= 0 ? '+' : '-';
+  const tzAbs = Math.abs(tzMinutes);
+  const tzHours = pad2(Math.floor(tzAbs / 60));
+  const tzMins = pad2(tzAbs % 60);
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${tzSign}${tzHours}:${tzMins}`;
+};
+
+const buildPeriodoLabel = (periodo: 'semanal' | 'mensual', rango: { from: Date; to: Date }) => {
+  const from = new Date(rango.from);
+  const to = new Date(rango.to);
+  if (periodo === 'semanal') {
+    const sameYear = from.getFullYear() === to.getFullYear();
+    const sameMonth = sameYear && from.getMonth() === to.getMonth();
+    if (sameMonth) {
+      return `Semana del ${from.getDate()} al ${to.getDate()} de ${MONTHS_ES[to.getMonth()]} de ${to.getFullYear()}`;
+    }
+    if (sameYear) {
+      return `Semana del ${from.getDate()} de ${MONTHS_ES[from.getMonth()]} al ${to.getDate()} de ${MONTHS_ES[to.getMonth()]} de ${to.getFullYear()}`;
+    }
+    return `Semana del ${from.getDate()} de ${MONTHS_ES[from.getMonth()]} de ${from.getFullYear()} al ${to.getDate()} de ${MONTHS_ES[to.getMonth()]} de ${to.getFullYear()}`;
+  }
+  return `Mes de ${MONTHS_ES[to.getMonth()]} de ${to.getFullYear()}`;
+};
+
+const buildPedidoCode = (id: number) => `P-${String(id).padStart(3, '0')}`;
+
 const toNumber = (val: any) => {
   const n = Number(val);
   return Number.isFinite(n) ? n : null;
 };
+
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+
+const startOfWeek = (d: Date) => {
+  const base = startOfDay(d);
+  const mondayBased = (base.getDay() + 6) % 7; // Monday=0 ... Sunday=6
+  base.setDate(base.getDate() - mondayBased);
+  return base;
+};
+
+const endOfWeek = (d: Date) => {
+  const base = startOfWeek(d);
+  base.setDate(base.getDate() + 6);
+  return endOfDay(base);
+};
+
+const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+const endOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
 
 const parseDateParam = (value?: string) => {
   if (!value) return null;
@@ -54,11 +124,40 @@ const parseDateParam = (value?: string) => {
 };
 
 const resolveReportRange = (
+  periodo: 'semanal' | 'mensual',
   query: { from?: string; to?: string },
   defaults: { from: Date; to: Date }
 ) => {
-  let from = parseDateParam(query.from) ?? defaults.from;
-  let to = parseDateParam(query.to) ?? defaults.to;
+  const parsedFrom = parseDateParam(query.from);
+  const parsedTo = parseDateParam(query.to);
+
+  let from = parsedFrom ?? defaults.from;
+  let to = parsedTo ?? defaults.to;
+
+  if (periodo === 'semanal') {
+    if (parsedFrom && !parsedTo) {
+      from = startOfWeek(parsedFrom);
+      to = endOfWeek(parsedFrom);
+    } else if (!parsedFrom && parsedTo) {
+      from = startOfWeek(parsedTo);
+      to = endOfWeek(parsedTo);
+    } else {
+      from = startOfDay(from);
+      to = endOfDay(to);
+    }
+  } else {
+    if (parsedFrom && !parsedTo) {
+      from = startOfMonth(parsedFrom);
+      to = endOfMonth(parsedFrom);
+    } else if (!parsedFrom && parsedTo) {
+      from = startOfMonth(parsedTo);
+      to = endOfMonth(parsedTo);
+    } else {
+      from = startOfDay(from);
+      to = endOfDay(to);
+    }
+  }
+
   if (from.getTime() > to.getTime()) {
     const tmp = from;
     from = to;
@@ -78,13 +177,43 @@ const buildReportWhere = (range: { from: Date; to: Date }) => {
   };
 };
 
+const REPORT_CACHE_TTL_MS = Math.max(1000, Number(process.env.REPORT_CACHE_TTL_MS ?? 20000));
+const REPORT_CACHE_MAX_ENTRIES = 120;
+const reportCache = new Map<string, { expiresAt: number; value: any }>();
+
+const getReportCacheKey = (periodo: 'semanal' | 'mensual', from: Date, to: Date) =>
+  `${periodo}:${from.getTime()}:${to.getTime()}`;
+
+const getCachedReport = (key: string) => {
+  const entry = reportCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    reportCache.delete(key);
+    return null;
+  }
+  return entry.value;
+};
+
+const setCachedReport = (key: string, value: any) => {
+  const now = Date.now();
+  for (const [k, v] of reportCache.entries()) {
+    if (v.expiresAt <= now) reportCache.delete(k);
+  }
+  if (reportCache.size >= REPORT_CACHE_MAX_ENTRIES) {
+    const firstKey = reportCache.keys().next().value as string | undefined;
+    if (firstKey) reportCache.delete(firstKey);
+  }
+  reportCache.set(key, { expiresAt: now + REPORT_CACHE_TTL_MS, value });
+};
+
 function buildReporte(periodo: 'semanal' | 'mensual', trabajos: PedidoLite[], rango: { from: Date; to: Date }) {
   const total = trabajos.length;
   const porEstado = countBy(trabajos, 'estado');
   const porPrioridad = countBy(trabajos, 'prioridad');
   const porSemaforo = countBy(trabajos, 'semaforo');
 
-  const now = rango.to;
+  // "Ahora" operativo: evita marcar atraso futuro cuando el rango termina en una fecha posterior.
+  const now = new Date(Math.min(Date.now(), rango.to.getTime()));
   const entregados = trabajos.filter(t => t.estado === 'ENTREGADO');
   const enProgreso = trabajos.filter(t => t.estado === 'EN_PROGRESO');
   const pendientes = trabajos.filter(t => t.estado === 'PENDIENTE');
@@ -194,11 +323,22 @@ function buildReporte(periodo: 'semanal' | 'mensual', trabajos: PedidoLite[], ra
 
   const trabajosPayload = trabajos.map(t => {
     const price = toNumber(t.precio);
+    const priceRaw = t.precio == null ? null : String(t.precio);
     const estadoPago = t.pagado ? 'PAGADO' : 'PENDIENTE';
+    const responsableNombre = t.responsable?.usuario?.nombre ?? null;
+    const clienteNombre = t.cliente?.nombre ?? null;
+    const responsableId = t.responsable?.id ?? t.responsable_id ?? null;
     return {
       id: t.id,
+      codigo: buildPedidoCode(t.id),
       titulo: t.titulo ?? '',
       descripcion: (t as any).descripcion ?? '',
+      cliente: { nombre: clienteNombre },
+      responsable: {
+        id: responsableId,
+        nombre: responsableNombre,
+      },
+      responsable_id: t.responsable_id,
       estado: t.estado,
       prioridad: t.prioridad,
       semaforo: t.semaforo,
@@ -208,35 +348,21 @@ function buildReporte(periodo: 'semanal' | 'mensual', trabajos: PedidoLite[], ra
       tiempo_estimado_sec: t.tiempo_estimado_sec,
       tiempo_real_sec: t.tiempo_real_sec,
       cliente_id: t.cliente_id,
-      responsable_id: t.responsable_id,
-      precio: price,
+      precio: priceRaw,
       monto: price,
       importe: price,
       estado_pago: estadoPago,
       paymentStatus: estadoPago,
       notas: t.notas ?? null,
-      cliente: t.cliente
-        ? {
-          id: t.cliente.id,
-          nombre: t.cliente.nombre,
-          direccion: t.cliente.direccion,
-          telefono: t.cliente.telefono,
-        }
-        : { id: null, nombre: null, direccion: null, telefono: null } as any,
-      responsable: t.responsable
-        ? {
-          id: t.responsable.id,
-          rol_tecnico: t.responsable.rol_tecnico,
-          direccion: t.responsable.direccion,
-          usuario: { nombre: t.responsable.usuario?.nombre ?? null },
-        }
-        : { id: null, rol_tecnico: null, direccion: null, usuario: { nombre: null } },
     };
   });
 
+  const periodoLabel = buildPeriodoLabel(periodo, rango);
+
   return {
-    periodo,
-    fechaGeneracion: new Date().toISOString(),
+    periodo: periodoLabel,
+    periodoCodigo: periodo,
+    fechaGeneracion: toISO(new Date()),
     rango: { from: toISO(rango.from), to: toISO(rango.to) },
     datos: {
       total,
@@ -274,8 +400,15 @@ function buildReporte(periodo: 'semanal' | 'mensual', trabajos: PedidoLite[], ra
 export const semanal = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const now = new Date();
-    const defaultFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const { from, to } = resolveReportRange(req.query as { from?: string; to?: string }, { from: defaultFrom, to: now });
+    const defaults = { from: startOfWeek(now), to: endOfWeek(now) };
+    const { from, to } = resolveReportRange('semanal', req.query as { from?: string; to?: string }, defaults);
+    const cacheKey = getReportCacheKey('semanal', from, to);
+    const cached = getCachedReport(cacheKey);
+    if (cached) {
+      res.setHeader('Cache-Control', `private, max-age=${Math.floor(REPORT_CACHE_TTL_MS / 1000)}`);
+      res.setHeader('X-Report-Cache', 'HIT');
+      return success(res, cached);
+    }
     const trabajos = await prisma.pedidos.findMany({
       where: buildReportWhere({ from, to }),
       select: {
@@ -295,11 +428,14 @@ export const semanal = async (req: Request, res: Response, next: NextFunction) =
         precio: true,
         pagado: true,
         notas: true,
-        cliente: { select: { id: true, nombre: true, direccion: true, telefono: true } },
-        responsable: { select: { id: true, rol_tecnico: true, direccion: true, usuario: { select: { nombre: true } } } },
+        cliente: { select: { nombre: true } },
+        responsable: { select: { id: true, usuario: { select: { nombre: true } } } },
       },
     }) as PedidoLite[];
     const reporte = buildReporte('semanal', trabajos, { from, to });
+    setCachedReport(cacheKey, reporte);
+    res.setHeader('Cache-Control', `private, max-age=${Math.floor(REPORT_CACHE_TTL_MS / 1000)}`);
+    res.setHeader('X-Report-Cache', 'MISS');
     return success(res, reporte);
   } catch (err) { next(err); }
 };
@@ -307,8 +443,15 @@ export const semanal = async (req: Request, res: Response, next: NextFunction) =
 export const mensual = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const now = new Date();
-    const defaultFrom = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-    const { from, to } = resolveReportRange(req.query as { from?: string; to?: string }, { from: defaultFrom, to: now });
+    const defaults = { from: startOfMonth(now), to: endOfMonth(now) };
+    const { from, to } = resolveReportRange('mensual', req.query as { from?: string; to?: string }, defaults);
+    const cacheKey = getReportCacheKey('mensual', from, to);
+    const cached = getCachedReport(cacheKey);
+    if (cached) {
+      res.setHeader('Cache-Control', `private, max-age=${Math.floor(REPORT_CACHE_TTL_MS / 1000)}`);
+      res.setHeader('X-Report-Cache', 'HIT');
+      return success(res, cached);
+    }
     const trabajos = await prisma.pedidos.findMany({
       where: buildReportWhere({ from, to }),
       select: {
@@ -328,11 +471,14 @@ export const mensual = async (req: Request, res: Response, next: NextFunction) =
         precio: true,
         pagado: true,
         notas: true,
-        cliente: { select: { id: true, nombre: true, direccion: true, telefono: true } },
-        responsable: { select: { id: true, rol_tecnico: true, direccion: true, usuario: { select: { nombre: true } } } },
+        cliente: { select: { nombre: true } },
+        responsable: { select: { id: true, usuario: { select: { nombre: true } } } },
       },
     }) as PedidoLite[];
     const reporte = buildReporte('mensual', trabajos, { from, to });
+    setCachedReport(cacheKey, reporte);
+    res.setHeader('Cache-Control', `private, max-age=${Math.floor(REPORT_CACHE_TTL_MS / 1000)}`);
+    res.setHeader('X-Report-Cache', 'MISS');
     return success(res, reporte);
   } catch (err) { next(err); }
 };
@@ -361,6 +507,10 @@ export const alertas = async (req: Request, res: Response, next: NextFunction) =
       'ENTREGA_COMPLETADA': 'Entrega Completada',
       'ASIGNACION': 'Pedido Asignado',
       'TRABAJO_AGREGADO': 'Nuevo Pedido',
+      'ETA_INICIAL': 'ETA Inicial',
+      'ETA_ACTUALIZADA': 'ETA Actualizada',
+      'ETA_ACTUALIZADA_MANUAL': 'ETA Actualizada Manualmente',
+      'ETA_SUGERIDA': 'Sugerencia de ETA',
     };
 
     const items = rows.map((a) => {
