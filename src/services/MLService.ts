@@ -13,6 +13,210 @@ const median = (arr: number[]) => {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 };
 
+type Shift = { startMin: number; endMin: number };
+type WorkerSchedule = { shifts: Shift[]; workdays?: Set<number> } | null;
+
+const DEFAULT_WORK_DAYS = process.env.WORKDAYS || '1-6';
+const DEFAULT_WORKDAY_SHIFTS = process.env.WORKDAY_SHIFTS || '08:00-12:00,13:00-17:00';
+const DEFAULT_WORKDAY_SHIFTS_SAT = process.env.WORKDAY_SHIFTS_SAT || '08:00-12:00';
+const MAX_DAILY_WORK_MINUTES = Math.max(
+  60,
+  Math.min(24 * 60, Math.round((Number(process.env.WORKER_MAX_DAILY_HOURS ?? 8) || 8) * 60))
+);
+
+const capShiftsToDailyLimit = (shifts: Shift[]): Shift[] => {
+  const ordered = [...shifts].sort((a, b) => a.startMin - b.startMin);
+  const out: Shift[] = [];
+  let remaining = MAX_DAILY_WORK_MINUTES;
+  for (const sh of ordered) {
+    if (remaining <= 0) break;
+    const len = sh.endMin - sh.startMin;
+    if (len <= 0) continue;
+    if (len <= remaining) {
+      out.push(sh);
+      remaining -= len;
+      continue;
+    }
+    out.push({ startMin: sh.startMin, endMin: sh.startMin + remaining });
+    remaining = 0;
+  }
+  return out;
+};
+
+const parseHHMM = (v: string): { h: number; m: number } => {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(v || '');
+  if (!match) return { h: 8, m: 0 };
+  const h = Math.min(23, Math.max(0, Number(match[1])));
+  const m = Math.min(59, Math.max(0, Number(match[2])));
+  return { h, m };
+};
+
+const parseShifts = (raw: string): Shift[] => {
+  const out: Shift[] = [];
+  const parts = (raw || '').split(',').map(s => s.trim()).filter(Boolean);
+  for (const p of parts) {
+    const [s, e] = p.split('-').map(x => (x || '').trim());
+    if (!s || !e) continue;
+    const sh = parseHHMM(s);
+    const eh = parseHHMM(e);
+    const startMin = sh.h * 60 + sh.m;
+    const endMin = eh.h * 60 + eh.m;
+    if (endMin > startMin) out.push({ startMin, endMin });
+  }
+  const capped = capShiftsToDailyLimit(out);
+  if (!capped.length) return [{ startMin: 8 * 60, endMin: 16 * 60 }];
+  return capped;
+};
+
+const parseWorkdays = (raw: string): Set<number> => {
+  const parts = (raw || '').split(',').map(p => p.trim()).filter(Boolean);
+  const set = new Set<number>();
+  for (const p of parts) {
+    if (p.includes('-')) {
+      const [aRaw, bRaw] = p.split('-');
+      const a = Number(aRaw);
+      const b = Number(bRaw);
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        const start = Math.max(0, Math.min(6, a));
+        const end = Math.max(0, Math.min(6, b));
+        for (let d = start; d <= end; d++) set.add(d);
+      }
+      continue;
+    }
+    const n = Number(p);
+    if (Number.isFinite(n)) set.add(Math.max(0, Math.min(6, n)));
+  }
+  if (!set.size) for (let d = 1; d <= 6; d++) set.add(d);
+  return set;
+};
+
+const globalWorkdays = parseWorkdays(DEFAULT_WORK_DAYS);
+const globalShifts = parseShifts(DEFAULT_WORKDAY_SHIFTS);
+const saturdayShifts = parseShifts(DEFAULT_WORKDAY_SHIFTS_SAT);
+
+const getShiftsForDay = (dayIdx: number, schedule?: WorkerSchedule): Shift[] => {
+  const workdays = schedule?.workdays && schedule.workdays.size ? schedule.workdays : globalWorkdays;
+  if (!workdays.has(dayIdx)) return [];
+  if (schedule?.shifts?.length) return schedule.shifts;
+  if (dayIdx === 6 && saturdayShifts.length) return saturdayShifts;
+  return globalShifts;
+};
+
+const dayStartAt = (d: Date, min: number) => {
+  const dt = new Date(d);
+  dt.setHours(Math.floor(min / 60), min % 60, 0, 0);
+  return dt;
+};
+
+const nextBusinessStart = (from: Date, schedule?: WorkerSchedule): Date => {
+  const base = new Date(from);
+  for (let i = 0; i < 370; i++) {
+    const day = new Date(base);
+    day.setDate(base.getDate() + i);
+    day.setHours(0, 0, 0, 0);
+    const shifts = getShiftsForDay(day.getDay(), schedule);
+    for (const sh of shifts) {
+      const start = dayStartAt(day, sh.startMin);
+      if (start.getTime() > from.getTime()) return start;
+    }
+  }
+  return new Date(from);
+};
+
+function addBusinessSecondsFrom(start: Date, sec: number, schedule?: WorkerSchedule): Date {
+  let remaining = Math.max(0, Math.round(sec));
+  let cursor = new Date(start);
+  if (remaining <= 0) return cursor;
+  let guard = 0;
+
+  while (remaining > 0 && guard < 5000) {
+    const shifts = getShiftsForDay(cursor.getDay(), schedule);
+    let advancedInDay = false;
+
+    for (const sh of shifts) {
+      const wStart = dayStartAt(cursor, sh.startMin);
+      const wEnd = dayStartAt(cursor, sh.endMin);
+      if (cursor < wStart) cursor = new Date(wStart);
+      if (cursor >= wEnd) continue;
+
+      const slotSec = Math.floor((wEnd.getTime() - cursor.getTime()) / 1000);
+      if (slotSec <= 0) continue;
+      advancedInDay = true;
+
+      if (remaining <= slotSec) {
+        return new Date(cursor.getTime() + remaining * 1000);
+      }
+      remaining -= slotSec;
+      cursor = new Date(wEnd);
+    }
+
+    if (remaining <= 0) break;
+    if (!advancedInDay) {
+      cursor = nextBusinessStart(cursor, schedule);
+    } else {
+      cursor = nextBusinessStart(new Date(cursor.getTime() + 1000), schedule);
+    }
+    guard++;
+  }
+  return cursor;
+}
+
+function businessSecondsBetweenSigned(a: Date, b: Date, schedule?: WorkerSchedule): number {
+  if (a.getTime() === b.getTime()) return 0;
+  const forward = (from: Date, to: Date) => {
+    let total = 0;
+    let cursor = new Date(from);
+    let guard = 0;
+    while (cursor < to && guard < 3700) {
+      const shifts = getShiftsForDay(cursor.getDay(), schedule);
+      const day0 = new Date(cursor);
+      day0.setHours(0, 0, 0, 0);
+      for (const sh of shifts) {
+        const wStart = dayStartAt(day0, sh.startMin);
+        const wEnd = dayStartAt(day0, sh.endMin);
+        const fromPoint = cursor > wStart ? cursor : wStart;
+        const toPoint = to < wEnd ? to : wEnd;
+        if (toPoint > fromPoint) {
+          total += Math.round((toPoint.getTime() - fromPoint.getTime()) / 1000);
+        }
+      }
+      const nextDay = new Date(day0);
+      nextDay.setDate(nextDay.getDate() + 1);
+      cursor = nextDay;
+      guard++;
+    }
+    return total;
+  };
+  if (b > a) return forward(a, b);
+  return -forward(b, a);
+}
+
+async function getWorkerScheduleForEta(workerId?: number | null): Promise<WorkerSchedule> {
+  if (!workerId) return null;
+  const worker = await prisma.trabajadores.findUnique({
+    where: { id: workerId },
+    select: { disponibilidad: true },
+  }).catch(() => null);
+  const disp = worker?.disponibilidad as any;
+  if (!disp || typeof disp !== 'object') return null;
+
+  const shifts = Array.isArray(disp.shifts) ? parseShifts(disp.shifts.join(',')) : [];
+  const days = Array.isArray(disp.days)
+    ? new Set<number>(disp.days.map((d: any) => Number(d)).filter((d: number) => Number.isFinite(d) && d >= 0 && d <= 6))
+    : undefined;
+  if (!shifts.length) return null;
+  return { shifts, workdays: days };
+}
+
+export async function calculateSuggestedDueDate(
+  estimatedSec: number,
+  workerId?: number | null,
+  fromDate = new Date()
+): Promise<Date> {
+  const schedule = await getWorkerScheduleForEta(workerId);
+  return addBusinessSecondsFrom(fromDate, estimatedSec, schedule);
+}
+
 export async function predictTiempoSecDetailed(
   pedidoId: number,
   trabajadorId?: number | null
@@ -197,12 +401,13 @@ export async function recalcPedidoEstimate(pedidoId: number, opts?: { trabajador
   const estimado = await predictTiempoSecHybridDetailed(pedidoId, workerId);
   const data: any = { tiempo_estimado_sec: estimado.adjustedSec };
   const previousDue = pedido.fecha_estimada_fin ? new Date(pedido.fecha_estimada_fin) : null;
-  const suggestedDue = new Date(Date.now() + estimado.adjustedSec * 1000);
+  const schedule = await getWorkerScheduleForEta(workerId);
+  const suggestedDue = addBusinessSecondsFrom(new Date(), estimado.adjustedSec, schedule);
   const askedToUpdateFecha = opts?.updateFechaEstimada === true
     || (opts?.updateFechaEstimada !== false && !pedido.fecha_estimada_fin);
   const etaAutoUpdateEnabled = String(process.env.ETA_AUTO_UPDATE_ENABLED ?? 'false').toLowerCase() === 'true';
   const minSuggestDeltaSec = Math.max(60, Number(process.env.ETA_SUGGEST_MIN_DELTA_SEC ?? 300));
-  const deltaSec = previousDue ? Math.round((suggestedDue.getTime() - previousDue.getTime()) / 1000) : 0;
+  const deltaSec = previousDue ? businessSecondsBetweenSigned(previousDue, suggestedDue, schedule) : 0;
   const absDeltaSec = Math.abs(deltaSec);
   const shouldUpdateFecha = askedToUpdateFecha && (!previousDue || etaAutoUpdateEnabled);
 

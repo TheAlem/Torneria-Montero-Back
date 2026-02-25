@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction  } from "express";
 import { prisma } from '../prisma/client.js';
 import { success } from '../utils/response.js';
+import { businessSecondsBetween } from '../services/SemaforoService.js';
 
 type PedidoLite = {
   id: number;
@@ -523,7 +524,8 @@ export const alertas = async (req: Request, res: Response, next: NextFunction) =
       if (a.tipo === 'RETRASO') {
         const due = a.pedido?.fecha_estimada_fin ? new Date(a.pedido.fecha_estimada_fin) : null;
         if (due && nowDate.getTime() > due.getTime()) {
-          const days = Math.max(1, Math.ceil((nowDate.getTime() - due.getTime()) / (24 * 3600 * 1000)));
+          const lateSec = businessSecondsBetween(due, nowDate);
+          const days = Math.max(1, Math.ceil(lateSec / (8 * 3600)));
           message = `Pedido ${code} - ${cliente ?? ''} - ${days} días de retraso`;
         } else {
           message = message || `Pedido ${code} - ${cliente ?? ''} - En riesgo de retraso`;
@@ -531,7 +533,7 @@ export const alertas = async (req: Request, res: Response, next: NextFunction) =
       } else if (a.tipo === 'PROXIMA_ENTREGA') {
         const due = a.pedido?.fecha_estimada_fin ? new Date(a.pedido.fecha_estimada_fin) : null;
         if (due && due.getTime() > nowDate.getTime()) {
-          const diffH = Math.ceil((due.getTime() - nowDate.getTime()) / (3600 * 1000));
+          const diffH = Math.ceil(businessSecondsBetween(nowDate, due) / 3600);
           const text = diffH <= 24 ? `Entrega en ${diffH} horas` : `Entrega en ${Math.ceil(diffH / 24)} días`;
           message = `Pedido ${code} - ${cliente ?? ''} - ${text}`;
         } else {

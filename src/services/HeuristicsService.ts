@@ -1,8 +1,9 @@
 ﻿import { prisma } from '../prisma/client.js';
-import { predictTiempoSecHybridDetailed } from './MLService.js';
+import { calculateSuggestedDueDate, predictTiempoSecHybridDetailed } from './MLService.js';
 import { normalizeSkills, parseDescripcion, skillOverlap } from './ml/features.js';
 import { buildHardRequirements, isAyudanteRole, workerMeetsRequirements } from './heuristics/requirements.js';
 import { collectGeneralTasks } from './heuristics/adjustments.js';
+import { businessSecondsBetween, getWorkerSchedule } from './SemaforoService.js';
 
 type RankedTrabajador = { id: number; score: number };
 
@@ -90,6 +91,13 @@ async function buildWorkerStats(workerIds: number[]): Promise<Map<number, Worker
     where: { responsable_id: { in: workerIds }, estado: 'ENTREGADO' },
     select: { responsable_id: true, fecha_inicio: true, fecha_estimada_fin: true, tiempo_real_sec: true, fecha_actualizacion: true }
   });
+  const workerScheduleCache = new Map<number, { shifts: { startMin: number; endMin: number }[]; workdays?: Set<number> } | null>();
+  const getScheduleCached = async (workerId: number) => {
+    if (!workerScheduleCache.has(workerId)) {
+      workerScheduleCache.set(workerId, await getWorkerSchedule(workerId));
+    }
+    return workerScheduleCache.get(workerId) ?? null;
+  };
 
   for (const p of entregados) {
     const s = stats.get(p.responsable_id!) ?? defaultStats();
@@ -101,8 +109,11 @@ async function buildWorkerStats(workerIds: number[]): Promise<Map<number, Worker
       const finReal = fechaInicio && tReal
         ? new Date(fechaInicio.getTime() + Math.max(0, tReal) * 1000)
         : (p.fecha_actualizacion ? new Date(p.fecha_actualizacion) : new Date());
-      const delaySec = Math.max(0, Math.round((finReal.getTime() - new Date(p.fecha_estimada_fin).getTime()) / 1000));
-      if (delaySec === 0) s.onTime += 1;
+      const due = new Date(p.fecha_estimada_fin);
+      const schedule = await getScheduleCached(p.responsable_id!);
+      const signedBusinessDeltaSec = businessSecondsBetween(due, finReal, schedule?.shifts, schedule?.workdays);
+      const delaySec = Math.max(0, signedBusinessDeltaSec);
+      if (signedBusinessDeltaSec <= 0) s.onTime += 1;
       if (delaySec > 0) {
         (delays[p.responsable_id] ||= []).push(delaySec);
       }
@@ -148,8 +159,7 @@ function roleMatchScore(rolToken: string, required: string[]): number {
 }
 
 // Formatea ETA en piezas útiles (display, fecha, hora)
-const formatEta = (ts: number) => {
-  const d = new Date(ts);
+const formatEta = (d: Date) => {
   const pad = (n: number) => String(n).padStart(2, '0');
   const fecha = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
   const hora = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -326,7 +336,8 @@ export async function buildCandidatesForPedido(
         etaInterval = estim.interval;
         etaReasons = estim.reasons;
         etaSec = estim.adjustedSec;
-        const parts = formatEta(Date.now() + estim.adjustedSec * 1000);
+        const due = await calculateSuggestedDueDate(estim.adjustedSec, t.id);
+        const parts = formatEta(due);
         eta = { display: parts.display, fecha: parts.fecha, hora: parts.hora, iso: parts.iso };
       } catch {}
     }

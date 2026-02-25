@@ -192,7 +192,11 @@ export async function transitionEstado(
       // Evaluar semáforo para este pedido (riesgo de retraso)
       try {
         if (pedido.fecha_estimada_fin) {
-          const remainingSec = Math.max(0, Math.round((new Date(pedido.fecha_estimada_fin).getTime() - now.getTime()) / 1000));
+          const schedule = pedido.responsable_id ? await getWorkerSchedule(pedido.responsable_id) : null;
+          const remainingSec = Math.max(
+            0,
+            businessSecondsBetween(new Date(now), new Date(pedido.fecha_estimada_fin), schedule?.shifts, schedule?.workdays)
+          );
           const responsableId = pedido.responsable_id ?? 0;
           const estimSec = await predictTiempoSecHybridDetailed(pedidoId, responsableId);
           const estimadoSec = estimSec.adjustedSec;

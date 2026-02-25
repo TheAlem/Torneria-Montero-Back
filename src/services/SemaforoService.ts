@@ -6,10 +6,14 @@ import ClientNotificationService from './ClientNotificationService.js';
 
 export type SemaforoColor = 'VERDE' | 'AMARILLO' | 'ROJO';
 
-// Configuración de jornada laboral (por defecto 08:00-12:00 y 13:00-18:00, lun-sáb)
+// Configuración de jornada laboral (por defecto 08:00-12:00 y 13:00-17:00, lun-sáb)
 const WORK_DAYS = process.env.WORKDAYS || '1-6'; // 0=domingo ... 6=sábado; default lun-sab
-const WORKDAY_SHIFTS_STR = process.env.WORKDAY_SHIFTS || '08:00-12:00,13:00-18:00';
+const WORKDAY_SHIFTS_STR = process.env.WORKDAY_SHIFTS || '08:00-12:00,13:00-17:00';
 const WORKDAY_SHIFTS_SAT = process.env.WORKDAY_SHIFTS_SAT; // opcional, ej. "08:00-12:00"
+const MAX_DAILY_WORK_MINUTES = Math.max(
+  60,
+  Math.min(24 * 60, Math.round((Number(process.env.WORKER_MAX_DAILY_HOURS ?? 8) || 8) * 60))
+);
 
 const parseHHMM = (v: string): { h: number; m: number } => {
   const m = /^(\d{1,2}):(\d{2})$/.exec(v || '');
@@ -20,6 +24,25 @@ const parseHHMM = (v: string): { h: number; m: number } => {
 };
 
 type Shift = { startMin: number; endMin: number };
+const capShiftsToDailyLimit = (shifts: Shift[]): Shift[] => {
+  const ordered = [...shifts].sort((a, b) => a.startMin - b.startMin);
+  const out: Shift[] = [];
+  let remaining = MAX_DAILY_WORK_MINUTES;
+  for (const sh of ordered) {
+    if (remaining <= 0) break;
+    const len = sh.endMin - sh.startMin;
+    if (len <= 0) continue;
+    if (len <= remaining) {
+      out.push(sh);
+      remaining -= len;
+      continue;
+    }
+    out.push({ startMin: sh.startMin, endMin: sh.startMin + remaining });
+    remaining = 0;
+  }
+  return out;
+};
+
 const parseShifts = (raw: string): Shift[] => {
   const out: Shift[] = [];
   const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
@@ -32,11 +55,12 @@ const parseShifts = (raw: string): Shift[] => {
     const endMin = eh.h * 60 + eh.m;
     if (endMin > startMin) out.push({ startMin, endMin });
   }
-  if (!out.length) {
-    // fallback single shift 08:00-18:00
-    out.push({ startMin: 8 * 60, endMin: 18 * 60 });
+  const capped = capShiftsToDailyLimit(out);
+  if (!capped.length) {
+    // fallback single shift 08:00-16:00 (8h)
+    return [{ startMin: 8 * 60, endMin: 16 * 60 }];
   }
-  return out;
+  return capped;
 };
 
 const globalShifts = parseShifts(WORKDAY_SHIFTS_STR);
@@ -176,7 +200,8 @@ export async function computeSemaforoForPedido(pedidoId: number): Promise<{
   const estim = await predictTiempoSecHybridDetailed(pedidoId, responsableId);
   const tEstimadoSec = estim.adjustedSec;
   const tRestanteSec = Math.max(0, tEstimadoSec - tRealSec);
-  const slackSec = businessSecondsBetween(new Date(), new Date(pedido.fecha_estimada_fin));
+  const schedule = responsableId ? await getWorkerSchedule(responsableId) : null;
+  const slackSec = businessSecondsBetween(new Date(), new Date(pedido.fecha_estimada_fin), schedule?.shifts, schedule?.workdays);
   const ratio = slackSec > 0 ? (tRestanteSec / slackSec) : Number.POSITIVE_INFINITY;
 
   const parsed = parseDescripcion(pedido.descripcion ?? '');

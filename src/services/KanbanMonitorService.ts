@@ -1,10 +1,11 @@
 import { prisma } from '../prisma/client.js';
 import NotificationService from './notificationService.js';
-import { predictTiempoSec } from './MLService.js';
+import { calculateSuggestedDueDate, predictTiempoSec } from './MLService.js';
 import { logger } from '../utils/logger.js';
 import { envFlag } from '../utils/env.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import { applyAndEmitSemaforo } from './SemaforoService.js';
+import { businessSecondsBetween, getWorkerSchedule } from './SemaforoService.js';
 import { suggestCandidates, maybeReassignIfEnabled, autoAssignIfEnabled } from './AssignmentService.js';
 import * as ClientNotificationService from './ClientNotificationService.js';
 
@@ -56,8 +57,11 @@ export async function evaluateAndNotify(options?: EvaluateOptions) {
       continue;
     } catch {}
     if (!p.fecha_estimada_fin) continue;
-    const remainingMs = p.fecha_estimada_fin.getTime() - now.getTime();
-    const remainingSec = Math.max(0, Math.round(remainingMs / 1000));
+    const schedule = p.responsable_id ? await getWorkerSchedule(p.responsable_id) : null;
+    const remainingSec = Math.max(
+      0,
+      businessSecondsBetween(new Date(now), new Date(p.fecha_estimada_fin), schedule?.shifts, schedule?.workdays)
+    );
 
     const responsableId = p.responsable_id ?? 0;
     const estimSec = await predictTiempoSec(p.id, responsableId);
@@ -65,7 +69,7 @@ export async function evaluateAndNotify(options?: EvaluateOptions) {
     // si la estimacion supera el tiempo restante, riesgo de retraso
     if (estimSec > remainingSec) {
       await prisma.pedidos.update({ where: { id: p.id }, data: { semaforo: 'ROJO' } });
-      const nuevaFecha = new Date(now.getTime() + estimSec * 1000);
+      const nuevaFecha = await calculateSuggestedDueDate(estimSec, p.responsable_id ?? null, now);
 
       await ClientNotificationService.createNotification({
         pedidoId: p.id,

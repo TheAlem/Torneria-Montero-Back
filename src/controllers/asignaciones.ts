@@ -2,7 +2,7 @@
 import { prisma } from '../prisma/client.js';
 import { success, fail } from '../utils/response.js';
 import { suggestTopTrabajador } from '../services/HeuristicsService.js';
-import { predictTiempoSecHybridDetailed, storePrediccion } from '../services/MLService.js';
+import { calculateSuggestedDueDate, predictTiempoSecHybridDetailed, storePrediccion } from '../services/MLService.js';
 import { scheduleEvaluatePedidos } from '../services/KanbanMonitorService.js';
 import { logger } from '../utils/logger.js';
 import RealtimeService from '../realtime/RealtimeService.js';
@@ -45,7 +45,7 @@ export const asignar = async (req: Request, res: Response, next: NextFunction) =
   // No cambiamos el estado a ASIGNADO; se mantiene en PENDIENTE hasta que manualmente pase a EN_PROGRESO desde el Kanban
   const dataUpdate: any = { responsable_id: Number(trabajador), tiempo_estimado_sec: tEstimado ?? null };
   if (!current?.fecha_estimada_fin && typeof tEstimado === 'number') {
-    dataUpdate.fecha_estimada_fin = new Date(Date.now() + tEstimado * 1000);
+    dataUpdate.fecha_estimada_fin = await calculateSuggestedDueDate(tEstimado, Number(trabajador));
   }
   await prisma.pedidos.update({ where: { id: Number(pedido_id) }, data: dataUpdate });
   if (!current?.fecha_estimada_fin && dataUpdate.fecha_estimada_fin) {
