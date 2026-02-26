@@ -24,6 +24,16 @@ async function loadTensorFlow(): Promise<TFModule> {
   }
 }
 
+function seededRandom(seed: number) {
+  let t = seed >>> 0;
+  return () => {
+    t += 0x6d2b79f5;
+    let x = Math.imul(t ^ (t >>> 15), 1 | t);
+    x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 export async function trainLinearDurationModelTF(limit = 1000) {
   const tf = await tfPromise;
   const rawRows = await prisma.tiempos.findMany({
@@ -42,6 +52,7 @@ export async function trainLinearDurationModelTF(limit = 1000) {
     duracion_sec: number;
     maxId: number;
   }>();
+
   for (const r of rawRows) {
     if (!r.pedido || r.pedido.estado !== 'ENTREGADO') continue;
     const key = `${r.pedido_id}:${r.trabajador_id}`;
@@ -83,7 +94,6 @@ export async function trainLinearDurationModelTF(limit = 1000) {
     return { count: 0, path, model, mae: null } as any;
   }
 
-  // 1) Construir features y filtrar outliers por rango operativo
   const rawSamples = rows.map(r =>
     buildBaseAndExtraFeatures({
       pedido: r.pedido as any,
@@ -91,9 +101,11 @@ export async function trainLinearDurationModelTF(limit = 1000) {
       trabajador: (r as any).trabajador ?? null,
     })
   );
+
   const minSec = getMinSeconds();
   const maxSec = getMaxSeconds();
   const samples = rawSamples.filter(s => Number.isFinite(s.y) && s.y >= minSec && s.y <= maxSec);
+
   if (!samples.length) {
     const priors = { ALTA: 8 * 3600, MEDIA: 6 * 3600, BAJA: 5 * 3600 };
     const model: LinearModel = {
@@ -108,16 +120,18 @@ export async function trainLinearDurationModelTF(limit = 1000) {
     return { count: 0, path, model, mae: null } as any;
   }
 
-  const Xbase = samples.map(s => s.xBase); // [bias, isAlta, isMedia, precio]
+  const Xbase = samples.map(s => s.xBase);
   const extras = samples.map(s => s.extraX);
   const extraNames = samples[0]?.extraNames || [];
   const yBase = samples.map(s => s.y);
+
   const median = (arr: number[]) => {
     if (!arr.length) return null;
     const sorted = [...arr].sort((a, b) => a - b);
     const mid = Math.floor(sorted.length / 2);
     return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
   };
+
   const defaultPriors = { ALTA: 8 * 3600, MEDIA: 6 * 3600, BAJA: 5 * 3600 };
   const yAlta = samples.filter(s => s.xBase[1] === 1).map(s => s.y);
   const yMedia = samples.filter(s => s.xBase[2] === 1).map(s => s.y);
@@ -127,18 +141,38 @@ export async function trainLinearDurationModelTF(limit = 1000) {
     MEDIA: median(yMedia) ?? defaultPriors.MEDIA,
     BAJA: median(yBaja) ?? defaultPriors.BAJA,
   };
+
+  const splitSeed = Math.floor(Number(process.env.ML_SPLIT_SEED ?? 42));
+  const rand = seededRandom(Number.isFinite(splitSeed) ? splitSeed : 42);
+  const realCount = Xbase.length;
+
+  const idxReal = Array.from({ length: realCount }, (_, i) => i);
+  for (let i = idxReal.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [idxReal[i], idxReal[j]] = [idxReal[j], idxReal[i]];
+  }
+
+  let split = realCount <= 1 ? realCount : Math.floor(0.8 * realCount);
+  if (realCount > 1) split = Math.min(realCount - 1, Math.max(1, split));
+  const trainIdxReal = idxReal.slice(0, split);
+  const validIdx = idxReal.slice(split);
+
+  const trainIdx = [...trainIdxReal];
+  let anchorCount = 0;
   const needAnchors = samples.length < 60;
   if (needAnchors) {
     const anchorPrice = median(Xbase.map(r => r[3] ?? 0)) ?? 0;
     const anchorExtras = Array(extras[0]?.length || 0).fill(0);
     const repeats = Math.max(3, Math.ceil(30 / Math.max(1, samples.length)));
-    const addAnchor = (prio: 'ALTA'|'MEDIA'|'BAJA', target: number) => {
+    const addAnchor = (prio: 'ALTA' | 'MEDIA' | 'BAJA', target: number) => {
       const isAlta = prio === 'ALTA' ? 1 : 0;
       const isMedia = prio === 'MEDIA' ? 1 : 0;
       for (let i = 0; i < repeats; i++) {
         Xbase.push([1, isAlta, isMedia, anchorPrice]);
         yBase.push(target);
         extras.push([...anchorExtras]);
+        trainIdx.push(Xbase.length - 1);
+        anchorCount += 1;
       }
     };
     addAnchor('ALTA', priors.ALTA);
@@ -146,21 +180,10 @@ export async function trainLinearDurationModelTF(limit = 1000) {
     addAnchor('BAJA', priors.BAJA);
   }
 
-  // Ya filtrado por rango operativo
   const yClamped = yBase;
 
-  // 2) Shuffle/split índices (80/20)
-  const idx = Array.from({ length: Xbase.length }, (_, i) => i);
-  for (let i = idx.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [idx[i], idx[j]] = [idx[j], idx[i]];
-  }
-  const split = Math.max(1, Math.floor(0.8 * idx.length));
-  const trainIdx = idx.slice(0, split);
-  const validIdx = idx.slice(split);
-
-  // 3) Escalar precio (solo en TRAIN) igual que antes
-  const precioTrain = trainIdx.map(i => Xbase[i][3] ?? 0);
+  const scaleIdx = trainIdxReal.length ? trainIdxReal : trainIdx;
+  const precioTrain = scaleIdx.map(i => Xbase[i][3] ?? 0);
   const mean = precioTrain.reduce((a, b) => a + b, 0) / (precioTrain.length || 1);
   const variance = precioTrain.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (precioTrain.length || 1);
   const std = Math.sqrt(variance) || 1;
@@ -189,13 +212,14 @@ export async function trainLinearDurationModelTF(limit = 1000) {
 
   const Xtr = trainIdx.map(i => [...mapRow(Xbase[i]), ...extras[i]]);
   const ytr = trainIdx.map(i => yClamped[i]);
+  const XtrReal = trainIdxReal.map(i => [...mapRow(Xbase[i]), ...extras[i]]);
+  const ytrReal = trainIdxReal.map(i => yClamped[i]);
   const Xva = validIdx.map(i => [...mapRow(Xbase[i]), ...extras[i]]);
   const yva = validIdx.map(i => yClamped[i]);
 
   const nFeatures = Xtr[0].length;
-
-  // 4) Modelo TF: una capa densa = regresión lineal; useBias=false (ya hay bias en features)
   const lambda = Number(process.env.ML_RIDGE_LAMBDA || 0);
+
   const modelTF = tf.sequential();
   modelTF.add(
     tf.layers.dense({
@@ -217,7 +241,6 @@ export async function trainLinearDurationModelTF(limit = 1000) {
   const XtrTensor = tf.tensor2d(Xtr);
   const ytrTensor = tf.tensor2d(ytr, [ytr.length, 1]);
 
-  // 5) Entrenar
   await modelTF.fit(XtrTensor, ytrTensor, {
     epochs: 80,
     batchSize: 32,
@@ -225,24 +248,34 @@ export async function trainLinearDurationModelTF(limit = 1000) {
     verbose: 0,
   });
 
-  // 6) Evaluar en train y valid
-  const XvaTensor = tf.tensor2d(Xva);
-  const yvaTensor = tf.tensor2d(yva, [yva.length, 1]);
-  const yhatVaTensor = modelTF.predict(XvaTensor) as TF.Tensor;
-  const yhatVa = (await yhatVaTensor.array()) as number[][];
-  const mae_valid =
-    yhatVa.length === 0
-      ? null
-      : yhatVa.reduce((acc, row, i) => acc + Math.abs(row[0] - yva[i]), 0) / yhatVa.length;
-  const mape_valid =
-    yhatVa.length === 0
-      ? null
-      : yhatVa.reduce((acc, row, i) => acc + Math.abs(row[0] - yva[i]) / Math.max(1, yva[i]), 0) / yhatVa.length;
+  let XvaTensor: TF.Tensor | null = null;
+  let yvaTensor: TF.Tensor | null = null;
+  let yhatVaTensor: TF.Tensor | null = null;
+  let yhatVa: number[][] = [];
+  let mae_valid: number | null = null;
+  let mape_valid: number | null = null;
 
-  const yhatTrTensor = modelTF.predict(XtrTensor) as TF.Tensor;
-  const yhatTr = (await yhatTrTensor.array()) as number[][];
-  const mae_train = yhatTr.reduce((acc, row, i) => acc + Math.abs(row[0] - ytr[i]), 0) / yhatTr.length;
-  const mape_train = yhatTr.reduce((acc, row, i) => acc + Math.abs(row[0] - ytr[i]) / Math.max(1, ytr[i]), 0) / yhatTr.length;
+  if (Xva.length > 0) {
+    XvaTensor = tf.tensor2d(Xva);
+    yvaTensor = tf.tensor2d(yva, [yva.length, 1]);
+    yhatVaTensor = modelTF.predict(XvaTensor) as TF.Tensor;
+    yhatVa = (await yhatVaTensor.array()) as number[][];
+    mae_valid = yhatVa.reduce((acc, row, i) => acc + Math.abs(row[0] - yva[i]), 0) / yhatVa.length;
+    mape_valid = yhatVa.reduce((acc, row, i) => acc + Math.abs(row[0] - yva[i]) / Math.max(1, yva[i]), 0) / yhatVa.length;
+  }
+
+  let XtrEvalTensor: TF.Tensor | null = null;
+  let yhatTrTensor: TF.Tensor | null = null;
+  let mae_train: number | null = null;
+  let mape_train: number | null = null;
+
+  if (XtrReal.length > 0) {
+    XtrEvalTensor = tf.tensor2d(XtrReal);
+    yhatTrTensor = modelTF.predict(XtrEvalTensor) as TF.Tensor;
+    const yhatTr = (await yhatTrTensor.array()) as number[][];
+    mae_train = yhatTr.reduce((acc, row, i) => acc + Math.abs(row[0] - ytrReal[i]), 0) / yhatTr.length;
+    mape_train = yhatTr.reduce((acc, row, i) => acc + Math.abs(row[0] - ytrReal[i]) / Math.max(1, ytrReal[i]), 0) / yhatTr.length;
+  }
 
   const buildMetricsByTag = () => {
     const metrics: Record<string, { mae: number; mape: number; count: number }> = {};
@@ -266,6 +299,7 @@ export async function trainLinearDurationModelTF(limit = 1000) {
       'proc_soldadura',
       'proc_pulido',
     ];
+
     for (const tag of tagNames) {
       const idxTag = idxMap(tag);
       if (idxTag < 0) continue;
@@ -285,13 +319,11 @@ export async function trainLinearDurationModelTF(limit = 1000) {
     return metrics;
   };
 
-  // 7) Extraer pesos
   const dense = modelTF.layers[0];
   const [kernel] = dense.getWeights();
   const kernelArr = (await kernel.array()) as number[][];
   const coef = kernelArr.map(r => r[0]);
 
-  // 8) Guardar modelo con el mismo formato
   const model: LinearModel = {
     version: 'v1.2-tf',
     trainedAt: new Date().toISOString(),
@@ -306,6 +338,10 @@ export async function trainLinearDurationModelTF(limit = 1000) {
         mae_valid,
         mape_train,
         mape_valid,
+        n_train: trainIdxReal.length,
+        n_valid: validIdx.length,
+        n_anchor: anchorCount,
+        split_seed: splitSeed,
         byTag: buildMetricsByTag(),
       },
     },
@@ -314,8 +350,29 @@ export async function trainLinearDurationModelTF(limit = 1000) {
   const path = saveModel(model);
   await saveModelToDB(model, { total: samples.length, mae: mae_valid ?? null, precision: mae_train ?? null });
 
-  // Liberar tensores
-  tf.dispose([XtrTensor, ytrTensor, XvaTensor, yvaTensor, yhatVaTensor, yhatTrTensor]);
+  tf.dispose([
+    XtrTensor,
+    ytrTensor,
+    XvaTensor as any,
+    yvaTensor as any,
+    yhatVaTensor as any,
+    XtrEvalTensor as any,
+    yhatTrTensor as any,
+  ].filter(Boolean) as any);
 
-  return { count: samples.length, path, model, mae: mae_valid, mae_train, mae_valid, mape_valid } as any;
+  return {
+    count: samples.length,
+    path,
+    model,
+    mae: mae_valid,
+    mae_train,
+    mae_valid,
+    mape_valid,
+    n_train: trainIdxReal.length,
+    n_valid: validIdx.length,
+    n_anchor: anchorCount,
+    split_seed: splitSeed,
+  } as any;
 }
+
+export default { trainLinearDurationModelTF };
