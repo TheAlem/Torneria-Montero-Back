@@ -93,6 +93,39 @@ export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'A
     try { RealtimeService.emitToOperators('assignment:auto-keep', { pedidoId, reason: 'auto_reassign_disabled', ts: Date.now() }); } catch {}
     return false;
   }
+
+  // Política operativa: ROJO alerta riesgo, pero solo reasignar cuando ya venció la fecha comprometida.
+  const pedido = await prisma.pedidos.findUnique({
+    where: { id: pedidoId },
+    select: { id: true, estado: true, fecha_estimada_fin: true, responsable_id: true }
+  });
+  if (!pedido) {
+    try { RealtimeService.emitToOperators('assignment:auto-keep', { pedidoId, reason: 'pedido_missing', ts: Date.now() }); } catch {}
+    return false;
+  }
+  if (String(pedido.estado).toUpperCase() === 'ENTREGADO') {
+    try { RealtimeService.emitToOperators('assignment:auto-keep', { pedidoId, reason: 'already_delivered', ts: Date.now() }); } catch {}
+    return false;
+  }
+
+  const onlyIfOverdue = envFlag('AUTO_REASSIGN_ONLY_IF_OVERDUE', true);
+  const graceMin = Math.max(0, Number(process.env.AUTO_REASSIGN_OVERDUE_GRACE_MINUTES ?? 0));
+  const dueAt = pedido.fecha_estimada_fin ? new Date(pedido.fecha_estimada_fin) : null;
+  const dueWithGrace = dueAt ? new Date(dueAt.getTime() + graceMin * 60 * 1000) : null;
+  const isOverdue = dueWithGrace ? Date.now() > dueWithGrace.getTime() : false;
+  if (onlyIfOverdue && !isOverdue) {
+    try {
+      RealtimeService.emitToOperators('assignment:auto-keep', {
+        pedidoId,
+        reason: 'not_overdue_yet',
+        dueAt: dueAt ? dueAt.toISOString() : null,
+        graceMin,
+        ts: Date.now()
+      });
+    } catch {}
+    return false;
+  }
+
   const candidates = await suggestCandidates(pedidoId);
   if (!candidates.length) {
     try { RealtimeService.emitToOperators('assignment:auto-keep', { pedidoId, reason: 'no_candidates', ts: Date.now() }); } catch {}
@@ -113,15 +146,7 @@ export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'A
     }
   }
 
-  const pedido = await prisma.pedidos.findUnique({
-    where: { id: pedidoId },
-    include: {
-      responsable: { include: { usuario: { select: { id: true, nombre: true } } } },
-      cliente: { select: { id: true, nombre: true } }
-    }
-  });
-
-  const currentId = pedido?.responsable_id ?? null;
+  const currentId = pedido.responsable_id ?? null;
   const currentCandidate = currentId ? candidates.find(c => c.trabajadorId === currentId) : undefined;
   const bestAvailable = candidates.find(c => !c.saturado) ?? candidates[0];
   const alternative = candidates.find(c => !c.saturado && c.trabajadorId !== currentId) ?? candidates.find(c => c.trabajadorId !== currentId);

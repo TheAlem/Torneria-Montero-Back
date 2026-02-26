@@ -72,7 +72,7 @@ router.patch('/:id/status', authenticate, cambiarEstado);
  *         required: false
  *         schema:
  *           type: boolean
- *         description: Si es true, intenta reasignación automática en pedidos en ROJO. Por defecto false (solo sugiere).
+ *         description: Si es true, intenta reasignación automática para pedidos en ROJO vencidos (fecha comprometida superada). Por defecto true; usar false para solo sugerencias.
  *     responses:
  *       '200':
  *         description: Evaluación completada

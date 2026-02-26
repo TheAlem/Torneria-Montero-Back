@@ -106,7 +106,7 @@ const getShiftsForDay = (dayIdx: number, schedule?: WorkerSchedule): Shift[] => 
 
 const dayStartAt = (d: Date, min: number) => {
   const dt = new Date(d);
-  dt.setHours(Math.floor(min / 60), min % 60, 0, 0);
+  dt.setUTCHours(Math.floor(min / 60), min % 60, 0, 0);
   return dt;
 };
 
@@ -117,9 +117,9 @@ const nextBusinessStart = (from: Date, schedule?: WorkerSchedule): Date => {
   const base = new Date(from);
   for (let i = 0; i < 370; i++) {
     const day = new Date(base);
-    day.setDate(base.getDate() + i);
-    day.setHours(0, 0, 0, 0);
-    const shifts = getShiftsForDay(day.getDay(), schedule);
+    day.setUTCDate(base.getUTCDate() + i);
+    day.setUTCHours(0, 0, 0, 0);
+    const shifts = getShiftsForDay(day.getUTCDay(), schedule);
     for (const sh of shifts) {
       const start = dayStartAt(day, sh.startMin);
       if (start.getTime() > from.getTime()) return start;
@@ -135,7 +135,7 @@ function addBusinessSecondsFrom(start: Date, sec: number, schedule?: WorkerSched
   let guard = 0;
 
   while (remaining > 0 && guard < 5000) {
-    const shifts = getShiftsForDay(cursor.getDay(), schedule);
+    const shifts = getShiftsForDay(cursor.getUTCDay(), schedule);
     let advancedInDay = false;
 
     for (const sh of shifts) {
@@ -175,9 +175,9 @@ function businessSecondsBetweenSigned(a: Date, b: Date, schedule?: WorkerSchedul
     let cursor = new Date(from);
     let guard = 0;
     while (cursor < to && guard < 3700) {
-      const shifts = getShiftsForDay(cursor.getDay(), schedule);
+      const shifts = getShiftsForDay(cursor.getUTCDay(), schedule);
       const day0 = new Date(cursor);
-      day0.setHours(0, 0, 0, 0);
+      day0.setUTCHours(0, 0, 0, 0);
       for (const sh of shifts) {
         const wStart = dayStartAt(day0, sh.startMin);
         const wEnd = dayStartAt(day0, sh.endMin);
@@ -188,7 +188,7 @@ function businessSecondsBetweenSigned(a: Date, b: Date, schedule?: WorkerSchedul
         }
       }
       const nextDay = new Date(day0);
-      nextDay.setDate(nextDay.getDate() + 1);
+      nextDay.setUTCDate(nextDay.getUTCDate() + 1);
       cursor = nextDay;
       guard++;
     }
@@ -411,7 +411,7 @@ export async function recalcPedidoEstimate(pedidoId: number, opts?: { trabajador
   const data: any = { tiempo_estimado_sec: estimado.adjustedSec };
   const previousDue = pedido.fecha_estimada_fin ? new Date(pedido.fecha_estimada_fin) : null;
   const schedule = await getWorkerScheduleForEta(workerId);
-  const suggestedDue = addBusinessSecondsFrom(new Date(), estimado.adjustedSec, schedule);
+  const suggestedDue = await calculateSuggestedDueDate(estimado.adjustedSec, workerId ?? undefined, new Date());
   const askedToUpdateFecha = opts?.updateFechaEstimada === true
     || (opts?.updateFechaEstimada !== false && !pedido.fecha_estimada_fin);
   const etaAutoUpdateEnabled = String(process.env.ETA_AUTO_UPDATE_ENABLED ?? 'false').toLowerCase() === 'true';
