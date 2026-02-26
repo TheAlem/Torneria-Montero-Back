@@ -17,6 +17,7 @@ type WorkerStats = {
 };
 
 type MaterialExperience = { material: string; count: number };
+type RangeSec = { minSec: number; maxSec: number; bufferPct: number };
 
 export type CandidateProfile = {
   trabajadorId: number;
@@ -139,6 +140,41 @@ function prioridadScore(pr: string) {
   return 0.4;
 }
 
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+
+function fallbackPrioritySec(prioridad: string | null | undefined): number {
+  if (prioridad === 'ALTA') return 3 * 3600;
+  if (prioridad === 'MEDIA') return 6 * 3600;
+  return 8 * 3600;
+}
+
+function estimateRemainingSecFromActivePedido(p: { tiempo_estimado_sec: number | null; tiempo_real_sec: number | null; prioridad: string | null }): number {
+  const estimated = typeof p.tiempo_estimado_sec === 'number' && isFinite(p.tiempo_estimado_sec)
+    ? p.tiempo_estimado_sec
+    : fallbackPrioritySec(p.prioridad);
+  const real = typeof p.tiempo_real_sec === 'number' && isFinite(p.tiempo_real_sec)
+    ? Math.max(0, p.tiempo_real_sec)
+    : 0;
+  return Math.max(15 * 60, Math.round(estimated - real));
+}
+
+function workerPerformanceFactor(stats: WorkerStats): number {
+  const desvio = stats.avgDesvio ?? 0.25;
+  const onTime = stats.conFechaCompromiso > 0 ? (stats.onTime / Math.max(1, stats.conFechaCompromiso)) : 0.6;
+  const delayNorm = stats.avgDelaySec != null ? Math.min(1, stats.avgDelaySec / (4 * 3600)) : 0.35;
+  const raw = 1 + ((desvio - 0.25) * 0.4) + ((0.65 - onTime) * 0.3) + (delayNorm * 0.15);
+  return clamp(raw, 0.8, 1.3);
+}
+
+function shiftIntervalByQueue(interval: RangeSec, queueSec: number): RangeSec {
+  const q = Math.max(0, Math.round(queueSec));
+  return {
+    minSec: interval.minSec + q,
+    maxSec: interval.maxSec + q,
+    bufferPct: interval.bufferPct,
+  };
+}
+
 function normalizeRol(rol?: string | null): string {
   if (!rol) return '';
   const r = rol.toLowerCase().trim();
@@ -188,11 +224,19 @@ export async function buildCandidatesForPedido(
   workerIds.forEach(id => wipCounts.set(id, 0));
   const activos = await prisma.pedidos.findMany({
     where: { responsable_id: { in: workerIds }, estado: { in: activeStates as any } },
-    select: { responsable_id: true }
+    select: { id: true, responsable_id: true, tiempo_estimado_sec: true, tiempo_real_sec: true, prioridad: true }
   });
+  const queueSecByWorker = new Map<number, number>();
   for (const p of activos) {
+    if (p.id === pedidoId) continue;
     const rid = p.responsable_id;
     wipCounts.set(rid, (wipCounts.get(rid) || 0) + 1);
+    const rem = estimateRemainingSecFromActivePedido({
+      tiempo_estimado_sec: p.tiempo_estimado_sec ?? null,
+      tiempo_real_sec: p.tiempo_real_sec ?? null,
+      prioridad: (p as any).prioridad ?? null,
+    });
+    queueSecByWorker.set(rid, (queueSecByWorker.get(rid) || 0) + rem);
   }
 
   const parsed = parseDescripcion(pedido.descripcion);
@@ -331,14 +375,25 @@ export async function buildCandidatesForPedido(
     if (opts?.includeEta) {
       try {
         const estim = await predictTiempoSecHybridDetailed(pedidoId, t.id);
-        etaSecBase = estim.baseSec;
-        etaSecAdjusted = estim.adjustedSec;
-        etaInterval = estim.interval;
+        const perfFactor = workerPerformanceFactor(stats);
+        const queueSec = queueSecByWorker.get(t.id) ?? 0;
+        const baseWorkerSec = Math.round(estim.baseSec * perfFactor);
+        const adjustedWorkerSec = Math.round(estim.adjustedSec * perfFactor);
+        const totalSec = adjustedWorkerSec + queueSec;
+        etaSecBase = baseWorkerSec;
+        etaSecAdjusted = totalSec;
+        etaInterval = shiftIntervalByQueue({
+          minSec: Math.round(estim.interval.minSec * perfFactor),
+          maxSec: Math.round(estim.interval.maxSec * perfFactor),
+          bufferPct: estim.interval.bufferPct,
+        }, queueSec);
         etaReasons = estim.reasons;
-        etaSec = estim.adjustedSec;
-        const due = await calculateSuggestedDueDate(estim.adjustedSec, t.id);
+        etaSec = totalSec;
+        const due = await calculateSuggestedDueDate(totalSec, t.id);
         const parts = formatEta(due);
         eta = { display: parts.display, fecha: parts.fecha, hora: parts.hora, iso: parts.iso };
+        if (queueSec > 0) etaReasons.push(`Cola actual del trabajador (+${Math.round(queueSec / 60)}m)`);
+        if (Math.abs(perfFactor - 1) >= 0.05) etaReasons.push(`Ajuste por desempeño histórico (x${perfFactor.toFixed(2)})`);
       } catch {}
     }
 
