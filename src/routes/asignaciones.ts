@@ -82,6 +82,14 @@ const router = Router();
  *             minSec: { type: number }
  *             maxSec: { type: number }
  *             bufferPct: { type: number }
+ *         tiempo_estimado_texto:
+ *           type: string
+ *           nullable: true
+ *           description: Duración formateada con minutos (ej. 4h 37m)
+ *         tiempo_estimado_rango_texto:
+ *           type: string
+ *           nullable: true
+ *           description: Rango formateado con minutos (ej. 3h 50m - 5h 12m)
  *     SupportCandidate:
  *       type: object
  *       properties:

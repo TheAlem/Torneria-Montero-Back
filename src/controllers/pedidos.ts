@@ -81,12 +81,27 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
       const m = text.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/);
       return m?.[0] ?? null;
     };
+    const extractIsosFromText = (text?: string | null): string[] => {
+      if (!text) return [];
+      const m = text.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g);
+      return Array.isArray(m) ? m : [];
+    };
     const etaInicialEvent = etaAlerts.find(a => a.tipo === 'ETA_INICIAL');
     const etaInicialIso = extractIsoFromText(etaInicialEvent?.descripcion) ?? (pedido.fecha_estimada_fin ? new Date(pedido.fecha_estimada_fin).toISOString() : null);
+    const latestEtaSuggestedEvent = [...etaAlerts].reverse().find(a => a.tipo === 'ETA_SUGERIDA');
+    const latestEtaSuggestionIsos = extractIsosFromText(latestEtaSuggestedEvent?.descripcion);
+    const latestEtaSuggestion = latestEtaSuggestedEvent ? {
+      id: latestEtaSuggestedEvent.id,
+      fecha: latestEtaSuggestedEvent.fecha,
+      old_due_iso: latestEtaSuggestionIsos[0] ?? null,
+      suggested_due_iso: latestEtaSuggestionIsos[1] ?? extractIsoFromText(latestEtaSuggestedEvent.descripcion),
+      descripcion: latestEtaSuggestedEvent.descripcion ?? null,
+    } : null;
     const etaTracking = {
       fecha_estimada_inicial: etaInicialIso,
       fecha_estimada_actual: pedido.fecha_estimada_fin ? new Date(pedido.fecha_estimada_fin).toISOString() : null,
       fecha_entrega_real: pedido.estado === 'ENTREGADO' ? new Date(pedido.fecha_actualizacion).toISOString() : null,
+      latest_eta_suggestion: latestEtaSuggestion,
       cambios: etaAlerts.map(a => ({
         id: a.id,
         tipo: a.tipo,

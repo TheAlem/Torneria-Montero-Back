@@ -27,7 +27,27 @@ type Candidate = {
   tiempo_estimado_sec?: number | null;
   tiempo_estimado_base_sec?: number | null;
   tiempo_estimado_rango?: { minSec: number; maxSec: number; bufferPct: number } | null;
+  tiempo_estimado_texto?: string | null;
+  tiempo_estimado_rango_texto?: string | null;
 };
+
+function formatDurationSec(value?: number | null): string | null {
+  if (typeof value !== 'number' || !isFinite(value) || value <= 0) return null;
+  const totalMin = Math.max(1, Math.round(value / 60));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h > 0 && m > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
+}
+
+function formatRangeSec(range?: { minSec: number; maxSec: number } | null): string | null {
+  if (!range) return null;
+  const minTxt = formatDurationSec(range.minSec);
+  const maxTxt = formatDurationSec(range.maxSec);
+  if (!minTxt || !maxTxt) return null;
+  return `${minTxt} - ${maxTxt}`;
+}
 
 export async function suggestCandidates(pedidoId: number): Promise<Candidate[]> {
   const candidates = await buildCandidatesForPedido(pedidoId, 10, { includeUser: true, includeEta: true });
@@ -52,6 +72,8 @@ export async function suggestCandidates(pedidoId: number): Promise<Candidate[]> 
     tiempo_estimado_sec: c.etaSecAdjusted ?? c.etaSec ?? null,
     tiempo_estimado_base_sec: c.etaSecBase ?? null,
     tiempo_estimado_rango: c.etaInterval ?? null,
+    tiempo_estimado_texto: formatDurationSec(c.etaSecAdjusted ?? c.etaSec ?? null),
+    tiempo_estimado_rango_texto: formatRangeSec(c.etaInterval ?? null),
   })).sort((a, b) => {
     if (a.saturado !== b.saturado) return Number(a.saturado) - Number(b.saturado);
     if (b.score !== a.score) return b.score - a.score;

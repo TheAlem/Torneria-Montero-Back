@@ -127,7 +127,12 @@ class Realtime {
           orderBy: { id: 'desc' },
         });
         if (recent) {
-          return; // throttle: no emitir ni persistir duplicado reciente
+          // Para ETA sugerida permitimos actualizar cuando cambió el contenido
+          // (evita que una sugerencia vieja "tape" una más reciente/correcta).
+          const sameMessage = String(recent.descripcion || '') === String(message || '');
+          if (type !== 'ETA_SUGERIDA' || sameMessage) {
+            return; // throttle: no emitir ni persistir duplicado reciente
+          }
         }
       } catch {}
     }

@@ -149,6 +149,14 @@ function prioridadScore(pr: string) {
 }
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+const ETA_COMBINED_FACTOR_MIN = Math.max(0.5, Number(process.env.ETA_COMBINED_FACTOR_MIN ?? 0.72));
+const ETA_COMBINED_FACTOR_MAX = Math.min(2.5, Math.max(ETA_COMBINED_FACTOR_MIN, Number(process.env.ETA_COMBINED_FACTOR_MAX ?? 1.8)));
+const ETA_SCORE_FACTOR_STRENGTH = Math.max(0.1, Number(process.env.ETA_SCORE_FACTOR_STRENGTH ?? 0.5));
+const ETA_SCORE_FACTOR_MIN = Math.max(0.6, Number(process.env.ETA_SCORE_FACTOR_MIN ?? 0.8));
+const ETA_SCORE_FACTOR_MAX = Math.min(1.5, Math.max(ETA_SCORE_FACTOR_MIN, Number(process.env.ETA_SCORE_FACTOR_MAX ?? 1.25)));
+const ETA_INTERVAL_STRENGTH = Math.max(0.1, Number(process.env.ETA_INTERVAL_STRENGTH ?? 0.45));
+const ETA_INTERVAL_FACTOR_MIN = Math.max(0.7, Number(process.env.ETA_INTERVAL_FACTOR_MIN ?? 0.9));
+const ETA_INTERVAL_FACTOR_MAX = Math.min(2.2, Math.max(ETA_INTERVAL_FACTOR_MIN, Number(process.env.ETA_INTERVAL_FACTOR_MAX ?? 1.8)));
 
 function fallbackPrioritySec(prioridad: string | null | undefined): number {
   if (prioridad === 'ALTA') return 3 * 3600;
@@ -183,9 +191,39 @@ function skillEtaFactor(skillScore: number): number {
 
 function scoreEtaFactor(score: number): number {
   // Mejor score global => ejecución esperada algo más eficiente.
-  // score=0.65 => ~1.00, score=1 => ~0.86, score=0 => ~1.14
-  const raw = 1 + ((0.65 - clamp(score, 0, 1)) * 0.22);
-  return clamp(raw, 0.86, 1.14);
+  // score=0.65 => ~1.00. Menor score incrementa ETA de forma más visible para evitar empates.
+  const raw = 1 + ((0.65 - clamp(score, 0, 1)) * ETA_SCORE_FACTOR_STRENGTH);
+  return clamp(raw, ETA_SCORE_FACTOR_MIN, ETA_SCORE_FACTOR_MAX);
+}
+
+function intervalEtaFactor(stats: WorkerStats, score: number): number {
+  // Rango más amplio cuando el trabajador tiene mayor variabilidad/retraso histórico o score más bajo.
+  const desvio = clamp(stats.avgDesvio ?? 0.35, 0, 1);
+  const onTime = stats.conFechaCompromiso > 0 ? (stats.onTime / Math.max(1, stats.conFechaCompromiso)) : 0.55;
+  const delayNorm = stats.avgDelaySec != null ? Math.min(1, stats.avgDelaySec / (4 * 3600)) : 0.35;
+  const scorePenalty = clamp(0.65 - clamp(score, 0, 1), -0.2, 0.65);
+  const coldPenalty = stats.coldStart ? 0.18 : 0;
+  const raw = 1
+    + ((desvio - 0.25) * ETA_INTERVAL_STRENGTH)
+    + ((0.65 - onTime) * 0.25)
+    + (delayNorm * 0.15)
+    + (scorePenalty * 0.25)
+    + coldPenalty;
+  return clamp(raw, ETA_INTERVAL_FACTOR_MIN, ETA_INTERVAL_FACTOR_MAX);
+}
+
+function personalizeInterval(interval: RangeSec, factor: number): RangeSec {
+  const min = Math.max(15 * 60, Math.round(interval.minSec));
+  const max = Math.max(min + 60, Math.round(interval.maxSec));
+  const mid = (min + max) / 2;
+  const half = Math.max(60, ((max - min) / 2) * Math.max(0.5, factor));
+  const minSec = Math.max(15 * 60, Math.round(mid - half));
+  const maxSec = Math.max(minSec + 60, Math.round(mid + half));
+  return {
+    minSec,
+    maxSec,
+    bufferPct: Number((interval.bufferPct * Math.max(0.5, factor)).toFixed(3)),
+  };
 }
 
 function shiftIntervalByQueue(interval: RangeSec, queueSec: number): RangeSec {
@@ -401,7 +439,7 @@ export async function buildCandidatesForPedido(
         const perfFactor = workerPerformanceFactor(stats);
         const skillFactor = skillEtaFactor(skillScore);
         const qualityFactor = scoreEtaFactor(finalScore);
-        const combinedFactor = clamp(perfFactor * skillFactor * qualityFactor, 0.72, 1.4);
+        const combinedFactor = clamp(perfFactor * skillFactor * qualityFactor, ETA_COMBINED_FACTOR_MIN, ETA_COMBINED_FACTOR_MAX);
         const queueSec = queueSecByWorker.get(t.id) ?? 0;
         const baseWorkerSec = Math.round(estim.baseSec * combinedFactor);
         const adjustedWorkerSec = Math.round(estim.adjustedSec * combinedFactor);
@@ -416,11 +454,13 @@ export async function buildCandidatesForPedido(
           queueSec,
           totalSec,
         };
-        etaInterval = shiftIntervalByQueue({
+        const intervalBase = shiftIntervalByQueue({
           minSec: Math.round(estim.interval.minSec * combinedFactor),
           maxSec: Math.round(estim.interval.maxSec * combinedFactor),
           bufferPct: estim.interval.bufferPct,
         }, queueSec);
+        const intervalFactor = intervalEtaFactor(stats, finalScore);
+        etaInterval = personalizeInterval(intervalBase, intervalFactor);
         etaReasons = estim.reasons;
         etaSec = totalSec;
         const due = await calculateSuggestedDueDate(totalSec, t.id);
@@ -429,6 +469,7 @@ export async function buildCandidatesForPedido(
         if (queueSec > 0) etaReasons.push(`Cola actual del trabajador (+${Math.round(queueSec / 60)}m)`);
         if (Math.abs(combinedFactor - 1) >= 0.05) etaReasons.push(`Ajuste por desempeño/skill (x${combinedFactor.toFixed(2)})`);
         if (Math.abs(qualityFactor - 1) >= 0.03) etaReasons.push(`Ajuste por score candidato (x${qualityFactor.toFixed(2)})`);
+        if (Math.abs(intervalFactor - 1) >= 0.05) etaReasons.push(`Ajuste de rango por incertidumbre (x${intervalFactor.toFixed(2)})`);
       } catch {}
     }
 
