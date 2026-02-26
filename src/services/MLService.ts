@@ -19,10 +19,12 @@ type WorkerSchedule = { shifts: Shift[]; workdays?: Set<number> } | null;
 const DEFAULT_WORK_DAYS = process.env.WORKDAYS || '1-6';
 const DEFAULT_WORKDAY_SHIFTS = process.env.WORKDAY_SHIFTS || '08:00-12:00,13:00-17:00';
 const DEFAULT_WORKDAY_SHIFTS_SAT = process.env.WORKDAY_SHIFTS_SAT || '08:00-12:00';
+const ETA_TIMEZONE_OFFSET_MIN = Number(process.env.ETA_TIMEZONE_OFFSET_MIN ?? -240); // America/La_Paz (UTC-4)
 const MAX_DAILY_WORK_MINUTES = Math.max(
   60,
   Math.min(24 * 60, Math.round((Number(process.env.WORKER_MAX_DAILY_HOURS ?? 8) || 8) * 60))
 );
+const ETA_TZ_OFFSET_MS = (Number.isFinite(ETA_TIMEZONE_OFFSET_MIN) ? ETA_TIMEZONE_OFFSET_MIN : -240) * 60 * 1000;
 
 const capShiftsToDailyLimit = (shifts: Shift[]): Shift[] => {
   const ordered = [...shifts].sort((a, b) => a.startMin - b.startMin);
@@ -108,6 +110,9 @@ const dayStartAt = (d: Date, min: number) => {
   return dt;
 };
 
+const toEtaWallClock = (d: Date): Date => new Date(d.getTime() + ETA_TZ_OFFSET_MS);
+const fromEtaWallClock = (d: Date): Date => new Date(d.getTime() - ETA_TZ_OFFSET_MS);
+
 const nextBusinessStart = (from: Date, schedule?: WorkerSchedule): Date => {
   const base = new Date(from);
   for (let i = 0; i < 370; i++) {
@@ -163,6 +168,8 @@ function addBusinessSecondsFrom(start: Date, sec: number, schedule?: WorkerSched
 
 function businessSecondsBetweenSigned(a: Date, b: Date, schedule?: WorkerSchedule): number {
   if (a.getTime() === b.getTime()) return 0;
+  const aa = toEtaWallClock(a);
+  const bb = toEtaWallClock(b);
   const forward = (from: Date, to: Date) => {
     let total = 0;
     let cursor = new Date(from);
@@ -187,8 +194,8 @@ function businessSecondsBetweenSigned(a: Date, b: Date, schedule?: WorkerSchedul
     }
     return total;
   };
-  if (b > a) return forward(a, b);
-  return -forward(b, a);
+  if (bb > aa) return forward(aa, bb);
+  return -forward(bb, aa);
 }
 
 async function getWorkerScheduleForEta(workerId?: number | null): Promise<WorkerSchedule> {
@@ -214,7 +221,9 @@ export async function calculateSuggestedDueDate(
   fromDate = new Date()
 ): Promise<Date> {
   const schedule = await getWorkerScheduleForEta(workerId);
-  return addBusinessSecondsFrom(fromDate, estimatedSec, schedule);
+  const startWallClock = toEtaWallClock(fromDate);
+  const dueWallClock = addBusinessSecondsFrom(startWallClock, estimatedSec, schedule);
+  return fromEtaWallClock(dueWallClock);
 }
 
 export async function predictTiempoSecDetailed(
