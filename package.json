@@ -13,6 +13,7 @@
     "openapi:generate": "tsx generate-openapi.ts",
     "ml:gen-csv": "tsx scripts/generate_train.ts",
     "ml:diagnose": "tsx scripts/ml_diagnose.ts",
+    "ml:eta-breakdown": "tsx scripts/eta_breakdown.ts",
     "ml:clean": "tsx scripts/ml_clean_outliers.ts",
     "test": "node --test --import tsx"
   },

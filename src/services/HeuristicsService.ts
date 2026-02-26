@@ -47,6 +47,14 @@ export type CandidateProfile = {
   etaSecAdjusted?: number | null;
   etaInterval?: { minSec: number; maxSec: number; bufferPct: number } | null;
   etaSec?: number | null;
+  etaDiagnostics?: {
+    modelBaseSec: number;
+    perfFactor: number;
+    scoreFactor: number;
+    workerAdjustedSec: number;
+    queueSec: number;
+    totalSec: number;
+  } | null;
   eta?: { display: string; fecha: string; hora: string; iso: string } | null;
   disponibilidad?: any;
   rol_tecnico?: string | null;
@@ -164,6 +172,20 @@ function workerPerformanceFactor(stats: WorkerStats): number {
   const delayNorm = stats.avgDelaySec != null ? Math.min(1, stats.avgDelaySec / (4 * 3600)) : 0.35;
   const raw = 1 + ((desvio - 0.25) * 0.4) + ((0.65 - onTime) * 0.3) + (delayNorm * 0.15);
   return clamp(raw, 0.8, 1.3);
+}
+
+function skillEtaFactor(skillScore: number): number {
+  // Mayor afinidad técnica => menor tiempo esperado para ejecutar este trabajo.
+  // 0.5 (neutral) => ~1.00 ; 1.0 => ~0.85 ; 0.0 => ~1.15
+  const raw = 1 + ((0.5 - clamp(skillScore, 0, 1)) * 0.3);
+  return clamp(raw, 0.85, 1.15);
+}
+
+function scoreEtaFactor(score: number): number {
+  // Mejor score global => ejecución esperada algo más eficiente.
+  // score=0.65 => ~1.00, score=1 => ~0.86, score=0 => ~1.14
+  const raw = 1 + ((0.65 - clamp(score, 0, 1)) * 0.22);
+  return clamp(raw, 0.86, 1.14);
 }
 
 function shiftIntervalByQueue(interval: RangeSec, queueSec: number): RangeSec {
@@ -371,20 +393,32 @@ export async function buildCandidatesForPedido(
     let etaSecBase: number | null = null;
     let etaSecAdjusted: number | null = null;
     let etaInterval: CandidateProfile['etaInterval'] = null;
+    let etaDiagnostics: CandidateProfile['etaDiagnostics'] = null;
     let etaReasons: string[] = [];
     if (opts?.includeEta) {
       try {
         const estim = await predictTiempoSecHybridDetailed(pedidoId, t.id);
         const perfFactor = workerPerformanceFactor(stats);
+        const skillFactor = skillEtaFactor(skillScore);
+        const qualityFactor = scoreEtaFactor(finalScore);
+        const combinedFactor = clamp(perfFactor * skillFactor * qualityFactor, 0.72, 1.4);
         const queueSec = queueSecByWorker.get(t.id) ?? 0;
-        const baseWorkerSec = Math.round(estim.baseSec * perfFactor);
-        const adjustedWorkerSec = Math.round(estim.adjustedSec * perfFactor);
+        const baseWorkerSec = Math.round(estim.baseSec * combinedFactor);
+        const adjustedWorkerSec = Math.round(estim.adjustedSec * combinedFactor);
         const totalSec = adjustedWorkerSec + queueSec;
         etaSecBase = baseWorkerSec;
         etaSecAdjusted = totalSec;
+        etaDiagnostics = {
+          modelBaseSec: estim.baseSec,
+          perfFactor: combinedFactor,
+          scoreFactor: qualityFactor,
+          workerAdjustedSec: adjustedWorkerSec,
+          queueSec,
+          totalSec,
+        };
         etaInterval = shiftIntervalByQueue({
-          minSec: Math.round(estim.interval.minSec * perfFactor),
-          maxSec: Math.round(estim.interval.maxSec * perfFactor),
+          minSec: Math.round(estim.interval.minSec * combinedFactor),
+          maxSec: Math.round(estim.interval.maxSec * combinedFactor),
           bufferPct: estim.interval.bufferPct,
         }, queueSec);
         etaReasons = estim.reasons;
@@ -393,7 +427,8 @@ export async function buildCandidatesForPedido(
         const parts = formatEta(due);
         eta = { display: parts.display, fecha: parts.fecha, hora: parts.hora, iso: parts.iso };
         if (queueSec > 0) etaReasons.push(`Cola actual del trabajador (+${Math.round(queueSec / 60)}m)`);
-        if (Math.abs(perfFactor - 1) >= 0.05) etaReasons.push(`Ajuste por desempeño histórico (x${perfFactor.toFixed(2)})`);
+        if (Math.abs(combinedFactor - 1) >= 0.05) etaReasons.push(`Ajuste por desempeño/skill (x${combinedFactor.toFixed(2)})`);
+        if (Math.abs(qualityFactor - 1) >= 0.03) etaReasons.push(`Ajuste por score candidato (x${qualityFactor.toFixed(2)})`);
       } catch {}
     }
 
@@ -431,6 +466,7 @@ export async function buildCandidatesForPedido(
       etaSecAdjusted,
       etaInterval,
       etaSec,
+      etaDiagnostics,
       eta,
       disponibilidad: (t as any).disponibilidad ?? null,
       rol_tecnico: (t as any).rol_tecnico ?? null,
@@ -528,5 +564,6 @@ export async function candidatesDetailsForPedido(pedidoId: number, limit = 5) {
     onTimeRate: c.onTimeRate,
     delayPromedio: c.delayPromedio,
     coldStart: c.coldStart,
+    tiempo_estimado_diagnostico: c.etaDiagnostics ?? null,
   }));
 }
