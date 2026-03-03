@@ -16,7 +16,8 @@ import kanbanRoutes from './routes/kanban.js';
 import mlRoutes from './routes/ml.js';
 import onboardingRoutes from './routes/onboarding.js';
 import realtimeRoutes from './routes/realtime.js';
-import { success } from './utils/response.js';
+import { fail, success } from './utils/response.js';
+import { getDatabaseStatusSnapshot } from './prisma/dbAvailability.js';
 
 const app = express();
 
@@ -129,7 +130,21 @@ try {
 	}
 }
 
-app.get('/', (req, res) => success(res, { ok: true, env: process.env.NODE_ENV || 'dev' }));
+app.get('/', (_req, res) => success(res, { ok: true, env: process.env.NODE_ENV || 'dev' }));
+app.get('/health', (_req, res) => {
+  const db = getDatabaseStatusSnapshot();
+  return success(res, { ok: true, service: 'up', db });
+});
+app.get('/health/db', (_req, res) => {
+  const db = getDatabaseStatusSnapshot();
+  if (db.available) return success(res, { ok: true, db });
+  if (db.status === 'unknown') return success(res, { ok: false, db, message: 'Estado de base de datos aun no verificado.' });
+  return fail(res, 'DB_UNAVAILABLE', db.message || 'Base de datos temporalmente no disponible.', 503, {
+    effect: 'db-offline',
+    retryAfterSec: 4,
+    db,
+  });
+});
 
 app.use(errorHandler);
 

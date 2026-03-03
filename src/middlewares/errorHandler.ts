@@ -1,9 +1,10 @@
 import type { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger.js';
 import { fail } from '../utils/response.js';
+import { getDatabaseErrorPublicInfo, markDatabaseDown } from '../prisma/dbAvailability.js';
 
 export default function errorHandler(err: any, req: Request, res: Response, _next: NextFunction) {
-  // Log legible en servidor
+  // Log legible en servidor.
   try {
     logger.error('API Error', {
       path: req.path,
@@ -16,39 +17,62 @@ export default function errorHandler(err: any, req: Request, res: Response, _nex
     // noop
   }
 
+  // DB suspendida/no disponible (ej. Neon en cold start).
+  const dbPublicInfo = getDatabaseErrorPublicInfo(err);
+  if (dbPublicInfo) {
+    const { snapshot } = markDatabaseDown(err, { source: `request:${req.method} ${req.path}` });
+    res.setHeader('Retry-After', String(dbPublicInfo.retryAfterSec));
+    return fail(res, dbPublicInfo.code, dbPublicInfo.message, 503, {
+      reason: dbPublicInfo.reason,
+      effect: dbPublicInfo.effect,
+      retryAfterSec: dbPublicInfo.retryAfterSec,
+      db: snapshot,
+    });
+  }
+
   let status = Number(err?.status || err?.statusCode || 500);
   let code = String(err?.code || 'SERVER_ERROR');
   let message = String(err?.message || 'Error interno del servidor.');
-  let errors: any = undefined;
+  const errors: any = undefined;
 
-  // Prisma: errores conocidos
+  // Prisma: errores conocidos.
   if (err?.name === 'PrismaClientKnownRequestError') {
     switch (err.code) {
       case 'P2002':
-        status = 409; code = 'UNIQUE_CONSTRAINT'; message = 'Ya existe un registro con estos datos únicos.'; break;
+        status = 409;
+        code = 'UNIQUE_CONSTRAINT';
+        message = 'Ya existe un registro con estos datos unicos.';
+        break;
       case 'P2003':
-        status = 409; code = 'FK_CONSTRAINT'; message = 'Operación no permitida: existen referencias asociadas.'; break;
+        status = 409;
+        code = 'FK_CONSTRAINT';
+        message = 'Operacion no permitida: existen referencias asociadas.';
+        break;
       case 'P2025':
-        status = 404; code = 'NOT_FOUND'; message = 'Recurso no encontrado.'; break;
+        status = 404;
+        code = 'NOT_FOUND';
+        message = 'Recurso no encontrado.';
+        break;
       default:
         code = err.code || code;
     }
   } else if (err?.name === 'PrismaClientValidationError') {
-    status = 400; code = 'VALIDATION_ERROR'; message = 'Parámetros inválidos.';
+    status = 400;
+    code = 'VALIDATION_ERROR';
+    message = 'Parametros invalidos.';
   }
 
-  // Zod u otros validadores
+  // Zod u otros validadores.
   if (err?.name === 'ZodError') {
     status = 422;
-    // Respuesta especial de validación de campos
     return res.status(status).json({
       status: 'fields-validation',
       data: err?.errors ?? err,
-      message: ''
+      message: '',
     });
   }
 
-  // Auth explícitos
+  // Auth explicitos.
   if (status === 401 || status === 403) {
     code = 'AUTH_ERROR';
   } else if (status === 400 && !code) {
@@ -57,7 +81,6 @@ export default function errorHandler(err: any, req: Request, res: Response, _nex
     code = 'NOT_FOUND';
   }
 
-  // Respuesta de error unificada
+  // Respuesta de error unificada.
   return fail(res, code, message, status, errors);
 }
-

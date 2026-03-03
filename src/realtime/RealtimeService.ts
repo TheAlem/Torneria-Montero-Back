@@ -1,6 +1,7 @@
 import type { Response } from 'express';
 import { logger } from '../utils/logger.js';
 import { prisma } from '../prisma/client.js';
+import { getDatabaseStatusSnapshot } from '../prisma/dbAvailability.js';
 
 type Stream = Response;
 
@@ -28,6 +29,20 @@ class Realtime {
   private clientNotifThrottle = new Map<string, number>();
   private keepAliveMs = 25_000;
 
+  private emitToAllStreams(event: string, payload: any) {
+    for (const set of this.clientStreams.values()) {
+      for (const s of set) writeEvent(s, event, payload);
+    }
+    for (const set of this.userStreams.values()) {
+      for (const s of set) writeEvent(s, event, payload);
+    }
+    for (const s of this.operatorStreams) writeEvent(s, event, payload);
+  }
+
+  private emitCurrentDbStatus(stream: Stream) {
+    writeEvent(stream, 'system:db-status', getDatabaseStatusSnapshot());
+  }
+
   private attachKeepAlive(res: Response) {
     const timer = setInterval(() => {
       try { res.write(':\n\n'); } catch { clearInterval(timer); }
@@ -39,6 +54,7 @@ class Realtime {
   subscribeClient(clientId: number, res: Response) {
     res.writeHead(200, sseHeaders());
     res.write(`:\n\n`); // sse ping
+    this.emitCurrentDbStatus(res);
     this.attachKeepAlive(res);
     const set = this.clientStreams.get(clientId) ?? new Set<Stream>();
     set.add(res);
@@ -53,6 +69,7 @@ class Realtime {
   subscribeUser(userId: number, res: Response) {
     res.writeHead(200, sseHeaders());
     res.write(`:\n\n`);
+    this.emitCurrentDbStatus(res);
     this.attachKeepAlive(res);
     const set = this.userStreams.get(userId) ?? new Set<Stream>();
     set.add(res);
@@ -67,6 +84,7 @@ class Realtime {
   subscribeOperators(res: Response) {
     res.writeHead(200, sseHeaders());
     res.write(`:\n\n`);
+    this.emitCurrentDbStatus(res);
     this.attachKeepAlive(res);
     this.operatorStreams.add(res);
     logger.info({ msg: '[SSE] operator subscribed', total: this.operatorStreams.size });
@@ -105,6 +123,10 @@ class Realtime {
 
   emitToOperators(event: string, payload: any) {
     for (const s of this.operatorStreams) writeEvent(s, event, payload);
+  }
+
+  emitSystemStatus(payload = getDatabaseStatusSnapshot()) {
+    this.emitToAllStreams('system:db-status', payload);
   }
 
   // Helper para alertas visibles en la web (operadores/admin)

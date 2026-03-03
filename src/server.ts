@@ -3,6 +3,11 @@ import dotenv from 'dotenv';
 import os from 'os';
 import { prisma } from './prisma/client.js';
 import { envFlag } from './utils/env.js';
+import {
+  markDatabaseDown,
+  markDatabaseUp,
+  onDatabaseStatusChange,
+} from './prisma/dbAvailability.js';
 dotenv.config();
 
 // When running via ts-node/esm import the compiled JS path
@@ -11,6 +16,12 @@ import RealtimeService from './realtime/RealtimeService.js';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const HOST = '0.0.0.0';
+
+const parsePositiveInt = (value: string | undefined, fallback: number) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.round(parsed);
+};
 
 const getNetworkAddress = () => {
   const nets = os.networkInterfaces();
@@ -27,13 +38,96 @@ const getNetworkAddress = () => {
 app.listen(PORT, HOST, async () => {
   logger.info(`Server listening on http://localhost:${PORT}`);
   logger.info(`On your network: http://${getNetworkAddress()}:${PORT}`);
+
+  const dbProbeEnabled = envFlag('DB_PROBE_ENABLED', true);
+  const dbProbeIntervalMs = Math.max(
+    30_000,
+    parsePositiveInt(process.env.DB_PROBE_INTERVAL_MS || process.env.DB_KEEPALIVE_INTERVAL_MS, 60_000)
+  );
+  const dbWakeLoopEnabled = envFlag('DB_WAKE_LOOP_ENABLED', true);
+  const dbWakeLoopIntervalMs = Math.max(2_000, parsePositiveInt(process.env.DB_WAKE_LOOP_INTERVAL_MS, 5_000));
+  const dbWakeLoopMaxAttempts = Math.max(1, parsePositiveInt(process.env.DB_WAKE_LOOP_MAX_ATTEMPTS, 18));
+  const runDbProbe = async (source: string) => {
+    const started = Date.now();
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      markDatabaseUp({ source, latencyMs: Date.now() - started });
+    } catch (e) {
+      markDatabaseDown(e, { source });
+      throw e;
+    }
+  };
+  let wakeLoopTimer: ReturnType<typeof setInterval> | null = null;
+  let wakeLoopAttempts = 0;
+  let wakeLoopInFlight = false;
+  const stopWakeLoop = (reason: string) => {
+    if (!wakeLoopTimer) return;
+    clearInterval(wakeLoopTimer);
+    wakeLoopTimer = null;
+    wakeLoopAttempts = 0;
+    wakeLoopInFlight = false;
+    logger.info(`[DB] Wake loop stopped (${reason})`);
+  };
+  const startWakeLoop = () => {
+    if (!dbWakeLoopEnabled) return;
+    if (wakeLoopTimer) return;
+    wakeLoopAttempts = 0;
+    wakeLoopTimer = setInterval(() => {
+      if (wakeLoopInFlight) return;
+      if (wakeLoopAttempts >= dbWakeLoopMaxAttempts) {
+        stopWakeLoop('max-attempts-reached');
+        return;
+      }
+      wakeLoopAttempts += 1;
+      wakeLoopInFlight = true;
+      runDbProbe('wake-loop')
+        .then(() => {
+          stopWakeLoop('database-up');
+        })
+        .catch(() => {})
+        .finally(() => {
+          wakeLoopInFlight = false;
+        });
+    }, dbWakeLoopIntervalMs);
+    logger.warn(
+      `[DB] Wake loop started (interval=${dbWakeLoopIntervalMs}ms maxAttempts=${dbWakeLoopMaxAttempts})`
+    );
+  };
+
+  onDatabaseStatusChange((snapshot) => {
+    if (snapshot.available) {
+      logger.info({ msg: '[DB] status changed', status: snapshot.status, source: snapshot.source, latencyMs: snapshot.latencyMs });
+      stopWakeLoop('status-up');
+    } else {
+      logger.warn({
+        msg: '[DB] status changed',
+        status: snapshot.status,
+        source: snapshot.source,
+        reason: snapshot.reason,
+        code: snapshot.code,
+        failures: snapshot.failureCount,
+      });
+      startWakeLoop();
+    }
+    try {
+      RealtimeService.emitSystemStatus(snapshot);
+    } catch {}
+  });
+
   try {
     await prisma.$connect();
-    // Keep-alive to avoid cold starts on first auth/login
-    setInterval(() => prisma.$queryRaw`SELECT 1`.catch(() => {}), 120_000);
+    await runDbProbe('startup-connect');
   } catch (e) {
+    markDatabaseDown(e, { source: 'startup-connect' });
     logger.error({ msg: 'Prisma connect failed', err: (e as any)?.message });
   }
+  if (dbProbeEnabled) {
+    setInterval(() => {
+      runDbProbe('interval-probe').catch(() => {});
+    }, dbProbeIntervalMs);
+    logger.info(`[DB] Probe/keep-alive enabled every ${dbProbeIntervalMs}ms`);
+  }
+
   const enabled = envFlag('KANBAN_MONITOR_ENABLED', false);
   const everySecRaw = Number(process.env.KANBAN_MONITOR_INTERVAL_SEC || 300);
   const intervalSec = Math.max(60, Number.isFinite(everySecRaw) ? everySecRaw : 300);
