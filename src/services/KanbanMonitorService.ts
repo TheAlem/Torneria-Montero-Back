@@ -8,6 +8,7 @@ import { applyAndEmitSemaforo } from './SemaforoService.js';
 import { businessSecondsBetween, getWorkerSchedule } from './SemaforoService.js';
 import { suggestCandidates, maybeReassignIfEnabled, autoAssignIfEnabled } from './AssignmentService.js';
 import * as ClientNotificationService from './ClientNotificationService.js';
+import { getEffectiveDueDate } from './dueDates.js';
 
 type EvaluateOptions = { autoReassign?: boolean; autoAssignPending?: boolean; pedidoIds?: number[] };
 
@@ -58,9 +59,10 @@ export async function evaluateAndNotify(options?: EvaluateOptions) {
     } catch {}
     if (!p.fecha_estimada_fin) continue;
     const schedule = p.responsable_id ? await getWorkerSchedule(p.responsable_id) : null;
+    const effectiveDueAt = getEffectiveDueDate(p.fecha_estimada_fin, schedule?.shifts) ?? new Date(p.fecha_estimada_fin);
     const remainingSec = Math.max(
       0,
-      businessSecondsBetween(new Date(now), new Date(p.fecha_estimada_fin), schedule?.shifts, schedule?.workdays)
+      businessSecondsBetween(new Date(now), effectiveDueAt, schedule?.shifts, schedule?.workdays)
     );
 
     const responsableId = p.responsable_id ?? 0;

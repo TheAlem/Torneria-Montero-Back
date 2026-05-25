@@ -5,6 +5,7 @@ import RealtimeService from '../realtime/RealtimeService.js';
 import { logger } from '../utils/logger.js';
 import { envFlag } from '../utils/env.js';
 import { buildCandidatesForPedido, buildSupportCandidatesForPedido } from './HeuristicsService.js';
+import { getEffectiveDueDate, isPastEffectiveDueDate } from './dueDates.js';
 
 type Candidate = {
   trabajadorId: number;
@@ -133,14 +134,15 @@ export async function maybeReassignIfEnabled(pedidoId: number, color: 'VERDE'|'A
   const onlyIfOverdue = envFlag('AUTO_REASSIGN_ONLY_IF_OVERDUE', true);
   const graceMin = Math.max(0, Number(process.env.AUTO_REASSIGN_OVERDUE_GRACE_MINUTES ?? 0));
   const dueAt = pedido.fecha_estimada_fin ? new Date(pedido.fecha_estimada_fin) : null;
-  const dueWithGrace = dueAt ? new Date(dueAt.getTime() + graceMin * 60 * 1000) : null;
-  const isOverdue = dueWithGrace ? Date.now() > dueWithGrace.getTime() : false;
+  const effectiveDueAt = getEffectiveDueDate(dueAt);
+  const isOverdue = isPastEffectiveDueDate(dueAt, new Date(), graceMin);
   if (onlyIfOverdue && !isOverdue) {
     try {
       RealtimeService.emitToOperators('assignment:auto-keep', {
         pedidoId,
         reason: 'not_overdue_yet',
         dueAt: dueAt ? dueAt.toISOString() : null,
+        effectiveDueAt: effectiveDueAt ? effectiveDueAt.toISOString() : null,
         graceMin,
         ts: Date.now()
       });

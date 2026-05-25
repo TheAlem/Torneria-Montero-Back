@@ -6,6 +6,7 @@ import RealtimeService from '../realtime/RealtimeService.js';
 import { applyAndEmitSemaforo, getTiempoRealSec, businessSecondsBetween, getWorkerSchedule } from './SemaforoService.js';
 import { autoAssignIfEnabled, maybeReassignIfEnabled } from './AssignmentService.js';
 import * as ClientNotificationService from './ClientNotificationService.js';
+import { getEffectiveDueDate } from './dueDates.js';
 import { Prisma } from '@prisma/client';
 
 type Estado = 'PENDIENTE' | 'ASIGNADO' | 'EN_PROGRESO' | 'QA' | 'ENTREGADO';
@@ -193,9 +194,10 @@ export async function transitionEstado(
       try {
         if (pedido.fecha_estimada_fin) {
           const schedule = pedido.responsable_id ? await getWorkerSchedule(pedido.responsable_id) : null;
+          const effectiveDueAt = getEffectiveDueDate(pedido.fecha_estimada_fin, schedule?.shifts) ?? new Date(pedido.fecha_estimada_fin);
           const remainingSec = Math.max(
             0,
-            businessSecondsBetween(new Date(now), new Date(pedido.fecha_estimada_fin), schedule?.shifts, schedule?.workdays)
+            businessSecondsBetween(new Date(now), effectiveDueAt, schedule?.shifts, schedule?.workdays)
           );
           const responsableId = pedido.responsable_id ?? 0;
           const estimSec = await predictTiempoSecHybridDetailed(pedidoId, responsableId);

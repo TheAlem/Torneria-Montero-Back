@@ -3,6 +3,7 @@ import { predictTiempoSecHybridDetailed } from './MLService.js';
 import { parseDescripcion, computeComplexityScore } from './ml/features.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import ClientNotificationService from './ClientNotificationService.js';
+import { getEffectiveDueDate } from './dueDates.js';
 
 export type SemaforoColor = 'VERDE' | 'AMARILLO' | 'ROJO';
 
@@ -220,7 +221,10 @@ export async function computeSemaforoForPedido(pedidoId: number): Promise<{
   const tEstimadoSec = estim.adjustedSec;
   const tRestanteSec = Math.max(0, tEstimadoSec - tRealSec);
   const schedule = responsableId ? await getWorkerSchedule(responsableId) : null;
-  const slackSec = businessSecondsBetween(new Date(), new Date(pedido.fecha_estimada_fin), schedule?.shifts, schedule?.workdays);
+  const effectiveDueAt = getEffectiveDueDate(pedido.fecha_estimada_fin, schedule?.shifts);
+  const slackSec = effectiveDueAt
+    ? businessSecondsBetween(new Date(), effectiveDueAt, schedule?.shifts, schedule?.workdays)
+    : 0;
   const ratio = slackSec > 0 ? (tRestanteSec / slackSec) : Number.POSITIVE_INFINITY;
 
   const parsed = parseDescripcion(pedido.descripcion ?? '');
