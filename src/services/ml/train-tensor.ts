@@ -11,15 +11,25 @@ const tfPromise = loadTensorFlow();
 async function loadTensorFlow(): Promise<TFModule> {
   try {
     const tfNode = (await import('@tensorflow/tfjs-node')) as TFModule;
+
+    console.log('[ML] TensorFlow nativo cargado correctamente');
+    console.log('[ML] Backend:', tfNode.getBackend());
+
     return tfNode;
   } catch (err) {
     console.warn(
       '[ML] Falling back to @tensorflow/tfjs CPU backend because @tensorflow/tfjs-node failed to load',
       err
     );
+
     const tfJs = (await import('@tensorflow/tfjs')) as TFModule;
+
     await tfJs.setBackend('cpu');
     await tfJs.ready();
+
+    console.log('[ML] TensorFlow JS fallback activo');
+    console.log('[ML] Backend:', tfJs.getBackend());
+
     return tfJs;
   }
 }
