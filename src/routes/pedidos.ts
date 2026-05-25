@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as ctrl from '../controllers/pedidos.js';
-import { authenticate } from '../middlewares/authMiddleware.js';
+import { authenticate, requireRole } from '../middlewares/authMiddleware.js';
 
 const router = Router();
 
@@ -218,7 +218,7 @@ router.put('/:id', authenticate, ctrl.actualizar);
  *             schema:
  *               $ref: '#/components/schemas/UnifiedSuccess'
  */
-router.delete('/:id', authenticate, ctrl.eliminar);
+router.delete('/:id', authenticate, requireRole('admin'), ctrl.eliminar);
 
 /**
  * @openapi

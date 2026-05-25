@@ -31,7 +31,6 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
 
     const tokenRole = String(payload?.role ?? payload?.rol ?? '').toUpperCase();
     if (tokenRole) {
-      if (tokenRole === 'TRABAJADOR') return fail(res, 'AUTH_ERROR', 'Acceso denegado', 403);
       (req as any).user = { id: userId, role: tokenRole, email: payload?.email ?? null };
       return next();
     }
@@ -42,7 +41,6 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       select: { id: true, rol: true, email: true },
     });
     if (!profile) return fail(res, 'AUTH_ERROR', 'Usuario no encontrado', 401);
-    if (String(profile.rol).toUpperCase() === 'TRABAJADOR') return fail(res, 'AUTH_ERROR', 'Acceso denegado', 403);
     (req as any).user = { id: profile.id, role: String(profile.rol).toUpperCase(), email: profile.email };
     next();
   } catch (err) {

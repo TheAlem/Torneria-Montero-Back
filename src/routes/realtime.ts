@@ -19,12 +19,12 @@ router.get('/notifications', authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// SSE stream for operators (ADMIN/TORNERO)
+// SSE stream for workshop operators (ADMIN/TORNERO/TRABAJADOR)
 router.get('/kanban', authenticate, (req, res, next) => {
   try {
     const user = (req as any).user as { id: number; role: string };
     const role = String(user.role).toUpperCase();
-    if (!['ADMIN','TORNERO'].includes(role)) {
+    if (!['ADMIN','TORNERO','TRABAJADOR'].includes(role)) {
       res.status(403).json({ status: 'error', data: null, message: 'Acceso denegado', code: 'AUTH_ERROR' });
       return;
     }

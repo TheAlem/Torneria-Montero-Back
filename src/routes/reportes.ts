@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as ctrl from '../controllers/reportes.js';
-import { authenticate } from '../middlewares/authMiddleware.js';
+import { authenticate, requireRole } from '../middlewares/authMiddleware.js';
 
 const router = Router();
 
@@ -55,7 +55,7 @@ const router = Router();
  *                   trabajos:
  *                     - { id: 10, codigo: 'P-010', titulo: 'Reparar eje', descripcion: 'Rectificado...', cliente: { nombre: 'Cliente ABC' }, responsable: { id: 2, nombre: 'Juan' }, responsable_id: 2, estado: 'ENTREGADO', prioridad: 'ALTA', semaforo: 'VERDE', fecha_inicio: '2025-04-27T00:00:00-04:00', fecha_estimada_fin: '2025-04-29T00:00:00-04:00', fecha_actualizacion: '2025-04-28T18:00:00-04:00', tiempo_estimado_sec: 72000, tiempo_real_sec: 65000, cliente_id: 5, precio: '800', monto: 800, importe: 800, estado_pago: 'PAGADO', paymentStatus: 'PAGADO', notas: null }
  */
-router.get('/semanal', authenticate, ctrl.semanal);
+router.get('/semanal', authenticate, requireRole('admin'), ctrl.semanal);
 
 /**
  * @openapi
@@ -85,7 +85,7 @@ router.get('/semanal', authenticate, ctrl.semanal);
  *             schema:
  *               $ref: '#/components/schemas/UnifiedSuccess'
  */
-router.get('/mensual', authenticate, ctrl.mensual);
+router.get('/mensual', authenticate, requireRole('admin'), ctrl.mensual);
 
 /**
  * @openapi

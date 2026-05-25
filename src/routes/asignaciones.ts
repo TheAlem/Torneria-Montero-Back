@@ -157,7 +157,7 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/UnifiedSuccess'
  */
-router.post('/', authenticate, requireRole('admin','tornero'), ctrl.asignar);
+router.post('/', authenticate, requireRole('admin','tornero','trabajador'), ctrl.asignar);
 
 /**
  * @openapi
@@ -215,7 +215,7 @@ router.get('/', authenticate, ctrl.listar);
  *                       items:
  *                         $ref: '#/components/schemas/SupportCandidate'
 */
-router.get('/suggest', authenticate, requireRole('admin','tornero'), async (req, res, next) => {
+router.get('/suggest', authenticate, requireRole('admin','tornero','trabajador'), async (req, res, next) => {
   try {
     const pedidoId = Number(req.query?.pedidoId);
     if (!Number.isFinite(pedidoId)) return fail(res, 'VALIDATION_ERROR', 'pedidoId inválido', 422);
@@ -263,7 +263,7 @@ router.get('/suggest', authenticate, requireRole('admin','tornero'), async (req,
  *       '422':
  *         description: Validación fallida
  */
-router.post('/auto', authenticate, requireRole('admin','tornero'), async (req, res, next) => {
+router.post('/auto', authenticate, requireRole('admin','tornero','trabajador'), async (req, res, next) => {
   try {
     const pedidoId = Number(req.body?.pedidoId);
     if (!Number.isFinite(pedidoId)) return fail(res, 'VALIDATION_ERROR', 'pedidoId inválido', 422);
