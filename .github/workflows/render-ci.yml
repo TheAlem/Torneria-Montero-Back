@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
+
   pull_request:
     branches:
       - main
+
   workflow_dispatch: {}
 
 jobs:
@@ -33,27 +35,27 @@ jobs:
         run: npm run build
 
       - name: Run tests
-        run: npm test
+        run: npm test --if-present
 
   deploy-to-render:
     needs: build-and-test
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
 
+    steps:
       - name: Trigger Render deploy
         run: |
           if [ -z "$RENDER_API_KEY" ] || [ -z "$RENDER_SERVICE_ID" ]; then
-            echo "Secretos RENDER_API_KEY o RENDER_SERVICE_ID no configurados. Saltando deploy."
-            exit 0
+            echo "Secretos RENDER_API_KEY o RENDER_SERVICE_ID no configurados."
+            exit 1
           fi
+
           echo "Triggering Render deploy for service $RENDER_SERVICE_ID"
-          curl -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
+
+          curl --fail-with-body -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
             -H "Authorization: Bearer ${RENDER_API_KEY}" \
             -H "Content-Type: application/json" \
-            -d '{"clearCache": false}'
+            -d '{"clearCache":"do_not_clear"}'
         env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY || '' }}
-          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID || '' }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
