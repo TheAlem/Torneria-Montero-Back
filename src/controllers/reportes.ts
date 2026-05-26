@@ -207,6 +207,10 @@ const setCachedReport = (key: string, value: any) => {
   reportCache.set(key, { expiresAt: now + REPORT_CACHE_TTL_MS, value });
 };
 
+export const clearReportCache = () => {
+  reportCache.clear();
+};
+
 function buildReporte(periodo: 'semanal' | 'mensual', trabajos: PedidoLite[], rango: { from: Date; to: Date }) {
   const total = trabajos.length;
   const porEstado = countBy(trabajos, 'estado');

@@ -7,6 +7,7 @@ import { envFlag, parseEnvBool } from '../utils/env.js';
 import { evaluateAndNotify } from '../services/KanbanMonitorService.js';
 import { transitionEstado } from '../services/PedidoWorkflow.js';
 import { computeSemaforoForPedido } from '../services/SemaforoService.js';
+import { clearReportCache } from './reportes.js';
 
 // Common select for kanban cards to ensure consistency
 const kanbanCardSelect: Prisma.pedidosSelect = {
@@ -105,6 +106,7 @@ export const cambiarEstado = async (req: Request, res: Response, next: NextFunct
     const { newStatus, note, userId } = req.body || {};
 
     const pedido = await transitionEstado(Number(id), newStatus, { note, userId });
+    clearReportCache();
     // Metrics for tooltip
     let semaforoMetrics: any = null;
     try { semaforoMetrics = await computeSemaforoForPedido(Number(id)); } catch {}

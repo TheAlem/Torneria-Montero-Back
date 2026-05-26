@@ -10,6 +10,7 @@ import * as ClientNotificationService from '../services/ClientNotificationServic
 import { recalcPedidoEstimate } from '../services/MLService.js';
 import { buildDetalleFromPayload, buildNotasFromDetalle, normalizeDetalleTrabajo } from '../services/PedidoDetails.js';
 import { scheduleEvaluatePedidos } from '../services/KanbanMonitorService.js';
+import { clearReportCache } from './reportes.js';
 
 const enrichPedidoDetalle = (pedido: any) => {
   const detalle = normalizeDetalleTrabajo(pedido?.detalle_trabajo);
@@ -122,6 +123,7 @@ export const crear = async (req: Request, res: Response, next: NextFunction) => 
     const parsed = CreatePedidoSchema.safeParse(req.body);
     if (!parsed.success) return fieldsValidation(res, parsed.error.flatten());
     const created = await PedidoService.createPedido(parsed.data);
+    clearReportCache();
     const pedido = await prisma.pedidos.findUnique({ where: { id: created.id }, include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } } } });
     // Alerta para operadores: nuevo trabajo agregado
     try {
@@ -189,6 +191,7 @@ export const actualizar = async (req: Request, res: Response, next: NextFunction
     if (Object.keys(data).length === 0) return fail(res, 'VALIDATION_ERROR', 'No hay campos para actualizar', 400);
 
     await prisma.pedidos.update({ where: { id }, data });
+    clearReportCache();
     const pedido = await prisma.pedidos.findUnique({ where: { id }, include: { cliente: true, responsable: { include: { usuario: { select: { id: true, nombre: true, email: true, telefono: true, rol: true } } } } } });
     if (needsRecalc && pedido) {
       try {
@@ -257,6 +260,7 @@ export const eliminar = async (req: Request, res: Response, next: NextFunction) 
   try {
     const id = Number(req.params.id);
     await prisma.pedidos.delete({ where: { id } });
+    clearReportCache();
     return success(res, null, 200, 'Pedido eliminado');
   } catch (err: any) {
     if (err?.code === 'P2025') return fail(res, 'NOT_FOUND', 'Pedido no encontrado', 404);
@@ -271,6 +275,7 @@ export const cambiarEstado = async (req: Request, res: Response, next: NextFunct
     const { estado, note, userId } = req.body as { estado: 'PENDIENTE'|'ASIGNADO'|'EN_PROGRESO'|'QA'|'ENTREGADO'; note?: string; userId?: number };
     if (!estado) return fail(res, 'VALIDATION_ERROR', 'Debe indicar el nuevo estado', 400);
     const pedido = await transitionEstado(id, estado, { note, userId });
+    clearReportCache();
     return success(res, { ok: true, pedido }, 200, 'Estado actualizado');
   } catch (err: any) {
     if (err?.code === 'INVALID_TRANSITION') {
