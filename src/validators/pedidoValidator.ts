@@ -68,6 +68,7 @@ export const UpdatePedidoSchema = z.object({
   titulo: z.string().min(1).optional(),
   descripcion: z.string().min(1).optional(),
   prioridad: z.enum(['BAJA', 'MEDIA', 'ALTA']).optional(),
+  cliente_id: z.number().int().optional(),
   precio: z.number().positive().nullable().optional(),
   fecha_estimada_fin: FechaEstimadaFinSchema.nullable().optional(),
   estado: z.enum(['PENDIENTE','ASIGNADO','EN_PROGRESO','QA','ENTREGADO']).optional(),

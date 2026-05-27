@@ -48,6 +48,14 @@ test('UpdatePedidoSchema acepta fecha con hora local (sin zona)', () => {
   assert.equal(parsed.success, true);
 });
 
+test('UpdatePedidoSchema acepta cambio de cliente junto con fecha', () => {
+  const parsed = UpdatePedidoSchema.safeParse({
+    cliente_id: 2,
+    fecha_estimada_fin: '2026-02-25T15:30',
+  });
+  assert.equal(parsed.success, true);
+});
+
 test('UpdatePedidoSchema acepta null para limpiar fecha', () => {
   const parsed = UpdatePedidoSchema.safeParse({
     fecha_estimada_fin: null,
