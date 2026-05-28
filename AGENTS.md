@@ -139,6 +139,40 @@ Cuidado con:
 - `responsable_id` apunta a `trabajadores.id`, no a `usuarios.id`.
 - Al reasignar, recalcular estimaciones cuando corresponda.
 
+## Semaforo Inteligente, ML y Heuristicas
+
+Esta es una parte central e innovadora del sistema. El Kanban no debe ser un semaforo simple por fecha; debe combinar estado del pedido, tiempo laboral disponible, jornada del trabajador, estimacion ML y heuristicas operativas.
+
+Fuente de verdad:
+
+- `src/services/WorkCalendarService.ts`: calendario laboral, turnos, jornada del trabajador, segundos laborales y fecha sugerida.
+- `src/services/SemaforoService.ts`: decision final del semaforo, metricas explicables y emision de cambios.
+- `src/services/MLService.ts`: estimacion base/ajustada del tiempo de trabajo; no debe duplicar calendario laboral.
+- `src/services/PedidoWorkflow.ts` y `src/services/KanbanMonitorService.ts`: deben llamar `applyAndEmitSemaforo` en vez de recalcular reglas propias.
+- `src/controllers/kanban.ts`: cuando recibe `includeMetrics=true`, debe devolver `lastSemaforo` con el resultado explicable para el frontend.
+
+Contrato esperado de `lastSemaforo`:
+
+- `color`: `VERDE`, `AMARILLO` o `ROJO`.
+- `decision`: estado explicable (`A_TIEMPO`, `ATENCION`, `RIESGO`, `VENCIDO`, `ENTREGADO`, `SIN_DATOS`), etiqueta, motivo y si debe notificar.
+- `ml`: estimacion base, estimacion ajustada, intervalo, version/modelo y fuente.
+- `heuristics`: razones legibles, complejidad y carga.
+- `tRealSec`, `tEstimadoSec`, `tRestanteSec`, `slackSec`, `marginSec`, `ratio`, `ratioAdjusted` y `thresholds`.
+
+Reglas que no deben romperse:
+
+- `ENTREGADO` siempre debe verse `VERDE` y con decision `ENTREGADO`, aunque el semaforo historico estuviera rojo.
+- Un trabajo apenas justo al final de su horario no debe pasar directo a `ROJO`; primero debe caer en `AMARILLO/ATENCION` si esta dentro de la tolerancia operativa.
+- `ROJO` debe reservarse para vencido real o riesgo fuera de la tolerancia.
+- No volver a usar reglas legacy tipo `estimado > restante => ROJO` sin considerar margen laboral, tolerancia, estado y trabajador.
+- No duplicar calculos de turnos, workdays ni segundos laborales en otros servicios; importar desde `WorkCalendarService`.
+- El resultado debe ser explicable para operadores: si el sistema marca atencion o riesgo, debe existir motivo visible en `decision.reason` y/o `heuristics.reasons`.
+
+Tests relevantes:
+
+- `tests/semaforoDecision.test.ts`: protege los casos criticos del semaforo inteligente.
+- Despues de tocar esta zona ejecutar `npm run build` y `node --test --import tsx tests\*.test.ts`.
+
 ## Asignaciones y Heuristicas
 
 - `src/controllers/asignaciones.ts`: asignacion manual.

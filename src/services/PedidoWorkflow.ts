@@ -1,15 +1,14 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../prisma/client.js';
-import NotificationService from './notificationService.js';
-import { predictTiempoSecHybridDetailed, recalcPedidoEstimate, upsertResultadoPrediccion } from './MLService.js';
+import { recalcPedidoEstimate, upsertResultadoPrediccion } from './MLService.js';
 import { logger } from '../utils/logger.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import { applyAndEmitSemaforo, getTiempoRealSec, businessSecondsBetween, getWorkerSchedule } from './SemaforoService.js';
 import { autoAssignIfEnabled, maybeReassignIfEnabled } from './AssignmentService.js';
 import * as ClientNotificationService from './ClientNotificationService.js';
-import { getEffectiveDueDate } from './dueDates.js';
-import { Prisma } from '@prisma/client';
 
 type Estado = 'PENDIENTE' | 'ASIGNADO' | 'EN_PROGRESO' | 'QA' | 'ENTREGADO';
+
 const allowedTransitions: Record<Estado, Estado[]> = {
   PENDIENTE: ['ASIGNADO', 'EN_PROGRESO'],
   ASIGNADO: ['PENDIENTE', 'EN_PROGRESO'],
@@ -21,24 +20,24 @@ const allowedTransitions: Record<Estado, Estado[]> = {
 const estadoCopy: Record<Estado, { title: string; body: string }> = {
   PENDIENTE: {
     title: 'Pedido recibido',
-    body: 'Registramos tu pedido y está esperando su turno para iniciar.'
+    body: 'Registramos tu pedido y esta esperando su turno para iniciar.',
   },
   ASIGNADO: {
     title: 'Pedido asignado',
-    body: 'Un técnico fue asignado a tu trabajo y prepara los materiales.'
+    body: 'Un tecnico fue asignado a tu trabajo y prepara los materiales.',
   },
   EN_PROGRESO: {
     title: 'Estamos trabajando en tu pedido',
-    body: 'Tu pieza está en proceso de fabricación en este momento.'
+    body: 'Tu pieza esta en proceso de fabricacion en este momento.',
   },
   QA: {
     title: 'Control de calidad',
-    body: 'Tu pedido está pasando por las pruebas y controles finales.'
+    body: 'Tu pedido esta pasando por las pruebas y controles finales.',
   },
   ENTREGADO: {
     title: 'Pedido entregado',
-    body: 'Tu pedido fue entregado. ¡Gracias!'
-  }
+    body: 'Tu pedido fue entregado. Gracias.',
+  },
 };
 
 const kanbanRealtimeSelect: Prisma.pedidosSelect = {
@@ -49,10 +48,13 @@ const kanbanRealtimeSelect: Prisma.pedidosSelect = {
   estado: true,
   pagado: true,
   semaforo: true,
+  fecha_inicio: true,
   fecha_estimada_fin: true,
   fecha_actualizacion: true,
+  tiempo_estimado_sec: true,
+  tiempo_real_sec: true,
   cliente: { select: { id: true, nombre: true, telefono: true } },
-  responsable: { select: { id: true, usuario: { select: { id: true, nombre: true } } } },
+  responsable: { select: { id: true, rol_tecnico: true, usuario: { select: { id: true, nombre: true } } } },
   asignaciones: {
     select: { origen: true, id: true },
     orderBy: { id: 'desc' },
@@ -63,6 +65,12 @@ const kanbanRealtimeSelect: Prisma.pedidosSelect = {
 async function emitKanbanPedidoUpsert(pedidoId: number, prevEstado: Estado, reason: string) {
   const card = await prisma.pedidos.findUnique({ where: { id: pedidoId }, select: kanbanRealtimeSelect });
   if (!card) return;
+
+  let lastSemaforo: any = null;
+  try {
+    lastSemaforo = await applyAndEmitSemaforo(pedidoId);
+  } catch {}
+
   const lastAssign = Array.isArray((card as any).asignaciones) && (card as any).asignaciones.length
     ? (card as any).asignaciones[0]
     : null;
@@ -74,8 +82,14 @@ async function emitKanbanPedidoUpsert(pedidoId: number, prevEstado: Estado, reas
     newEstado: card.estado,
     reason,
     ts: Date.now(),
-    card: { ...rest, autoAsignado },
+    card: {
+      ...rest,
+      semaforo: lastSemaforo?.color ?? rest.semaforo,
+      lastSemaforo,
+      autoAsignado,
+    },
   };
+
   RealtimeService.emitToOperators('kanban:pedido-upsert', payload);
   if (prevEstado !== (card.estado as Estado)) {
     RealtimeService.emitToOperators('kanban:pedido-moved', payload);
@@ -96,27 +110,27 @@ export async function transitionEstado(
     logger.info({ msg: '[PedidoWorkflow] Estado sin cambios, se omiten side-effects', pedidoId, estado: newEstado });
     return await prisma.pedidos.findUnique({ where: { id: pedidoId }, include: { cliente: true, responsable: true } });
   }
+
   const allowed = allowedTransitions[prevEstado] || [];
   if (!allowed.includes(newEstado)) {
-    const err: any = new Error(`Transición no permitida de ${prevEstado} a ${newEstado}`);
+    const err: any = new Error(`Transicion no permitida de ${prevEstado} a ${newEstado}`);
     err.code = 'INVALID_TRANSITION';
     err.status = 400;
     err.allowed = allowed;
     throw err;
   }
+
   const updateData: any = { estado: newEstado };
-  if (newEstado === 'ENTREGADO') {
-    updateData.pagado = true; // al entregar, se marca pagado automáticamente
-  }
-  if (prevEstado !== 'EN_PROGRESO' && newEstado === 'EN_PROGRESO') {
-    updateData.fecha_inicio = now;
-  }
+  if (newEstado === 'ENTREGADO') updateData.pagado = true;
+  if (prevEstado !== 'EN_PROGRESO' && newEstado === 'EN_PROGRESO') updateData.fecha_inicio = now;
+
   await prisma.pedidos.update({ where: { id: pedidoId }, data: updateData });
   pedido = { ...pedido, ...updateData };
-  // Evento inmediato para mover tarjeta entre columnas sin recargar todo el tablero.
-  try { await emitKanbanPedidoUpsert(pedidoId, prevEstado, 'status_transition'); } catch { }
 
-  // Auto-asignar antes de abrir tiempos para no perder tracking
+  try {
+    await emitKanbanPedidoUpsert(pedidoId, prevEstado, 'status_transition');
+  } catch {}
+
   if (newEstado === 'EN_PROGRESO' && !pedido.responsable_id) {
     try {
       const assigned = await autoAssignIfEnabled(pedidoId);
@@ -124,31 +138,34 @@ export async function transitionEstado(
         const refreshed = await prisma.pedidos.findUnique({ where: { id: pedidoId } });
         if (refreshed) pedido = refreshed;
       }
-    } catch { }
+    } catch {}
   }
 
-  // Abrir registro de tiempo cuando entra en EN_PROGRESO
   if (prevEstado !== 'EN_PROGRESO' && newEstado === 'EN_PROGRESO' && pedido.responsable_id) {
     try {
       await prisma.tiempos.create({
         data: {
           pedido_id: pedidoId,
           trabajador_id: pedido.responsable_id,
-          categoria: 'Producción',
+          categoria: 'Produccion',
           inicio: now,
           estado: 'ABIERTO',
           registrado_por: opts.userId ?? null,
-        }
+        },
       });
-    } catch (_) { /* ignore */ }
-    // Aprendizaje online: estimar y fijar fecha si no existe
-    try { await recalcPedidoEstimate(pedidoId, { trabajadorId: pedido.responsable_id, updateFechaEstimada: true }); } catch { }
+    } catch {}
+
+    try {
+      await recalcPedidoEstimate(pedidoId, { trabajadorId: pedido.responsable_id, updateFechaEstimada: true });
+    } catch {}
   }
 
-  // Cerrar registro de tiempo abierto al salir de EN_PROGRESO
   if (prevEstado === 'EN_PROGRESO' && newEstado !== 'EN_PROGRESO') {
     try {
-      const abierto = await prisma.tiempos.findFirst({ where: { pedido_id: pedidoId, estado: 'ABIERTO' }, orderBy: { id: 'desc' } });
+      const abierto = await prisma.tiempos.findFirst({
+        where: { pedido_id: pedidoId, estado: 'ABIERTO' },
+        orderBy: { id: 'desc' },
+      });
       if (abierto) {
         const fin = now;
         let duracion = null;
@@ -158,21 +175,25 @@ export async function transitionEstado(
         }
         await prisma.tiempos.update({ where: { id: abierto.id }, data: { fin, duracion_sec: duracion, estado: 'CERRADO' } });
       }
-    } catch (_) { /* ignore */ }
+    } catch {}
   }
 
   const runSideEffects = async () => {
-    // Calcular lead time y cierre al ENTREGADO
     if (newEstado === 'ENTREGADO') {
       try {
-        const estimSec = pedido.tiempo_estimado_sec ?? await recalcPedidoEstimate(pedidoId, { trabajadorId: pedido.responsable_id ?? null, updateFechaEstimada: false }) ?? null;
+        const estimSec = pedido.tiempo_estimado_sec
+          ?? await recalcPedidoEstimate(pedidoId, { trabajadorId: pedido.responsable_id ?? null, updateFechaEstimada: false })
+          ?? null;
         const tRealSec = await getTiempoRealSec(pedidoId);
         const inicio = pedido.fecha_inicio ? new Date(pedido.fecha_inicio) : null;
         const leadSec = inicio ? Math.max(1, businessSecondsBetween(inicio, now)) : null;
         const finalReal = tRealSec ?? leadSec ?? null;
-        await prisma.pedidos.update({ where: { id: pedidoId }, data: { tiempo_real_sec: finalReal ?? null, semaforo: 'VERDE' } });
+
+        await prisma.pedidos.update({
+          where: { id: pedidoId },
+          data: { tiempo_real_sec: finalReal ?? null, semaforo: 'VERDE' },
+        });
         await upsertResultadoPrediccion(pedidoId, pedido.responsable_id ?? null, finalReal, estimSec ?? null);
-        // Notificacion de entrega (persistencia + push)
         await ClientNotificationService.createNotification({
           pedidoId,
           clienteId: pedido.cliente_id,
@@ -180,57 +201,17 @@ export async function transitionEstado(
           tipo: 'ENTREGA',
           title: estadoCopy.ENTREGADO.title,
         });
-        // Alerta web para operadores
         try {
           RealtimeService.emitWebAlert('ENTREGA_COMPLETADA', `Pedido #${pedidoId} entregado`, { pedidoId });
-        } catch { }
-      } catch (_) { /* ignore */ }
+        } catch {}
+      } catch {}
     } else {
       try {
         const refreshed = await prisma.pedidos.findUnique({ where: { id: pedidoId } });
         if (refreshed) pedido = refreshed;
-      } catch { }
-      // Evaluar semáforo para este pedido (riesgo de retraso)
-      try {
-        if (pedido.fecha_estimada_fin) {
-          const schedule = pedido.responsable_id ? await getWorkerSchedule(pedido.responsable_id) : null;
-          const effectiveDueAt = getEffectiveDueDate(pedido.fecha_estimada_fin, schedule?.shifts) ?? new Date(pedido.fecha_estimada_fin);
-          const remainingSec = Math.max(
-            0,
-            businessSecondsBetween(new Date(now), effectiveDueAt, schedule?.shifts, schedule?.workdays)
-          );
-          const responsableId = pedido.responsable_id ?? 0;
-          const estimSec = await predictTiempoSecHybridDetailed(pedidoId, responsableId);
-          const estimadoSec = estimSec.adjustedSec;
-          if (estimadoSec > remainingSec) {
-            await prisma.pedidos.update({ where: { id: pedidoId }, data: { semaforo: 'ROJO' } });
-            const alertaNotif = await ClientNotificationService.createNotification({
-              pedidoId,
-              clienteId: pedido.cliente_id,
-              mensaje: 'Tu pedido podría retrasarse. Estamos ajustando la planificación.',
-              tipo: 'ALERTA',
-              title: 'Riesgo de retraso',
-            });
-            if (alertaNotif) {
-              RealtimeService.emitWebAlert('RETRASO', `Pedido #${pedidoId} en riesgo (ROJO)`, { pedidoId, reason: 'Riesgo de retraso detectado' });
-            }
-            await NotificationService.sendDelayNotice({
-              clienteEmail: null,
-              clienteTelefono: null,
-              pedidoId,
-              nuevaFecha: null,
-              motivo: 'Riesgo de retraso detectado',
-            });
-          } else {
-            await prisma.pedidos.update({ where: { id: pedidoId }, data: { semaforo: 'VERDE' } });
-          }
-        }
-      } catch (e) {
-        logger.warn({ msg: '[PedidoWorkflow] Error evaluando semáforo', pedidoId, err: (e as any)?.message });
-      }
+      } catch {}
     }
 
-    // Recalcular WIP (carga_actual) del responsable
     try {
       const refreshed = await prisma.pedidos.findUnique({ where: { id: pedidoId } });
       if (refreshed) pedido = refreshed;
@@ -238,18 +219,17 @@ export async function transitionEstado(
         const wip = await prisma.pedidos.count({ where: { responsable_id: pedido.responsable_id, estado: 'EN_PROGRESO' } });
         await prisma.trabajadores.update({ where: { id: pedido.responsable_id }, data: { carga_actual: wip } });
       }
-    } catch (_) { /* ignore */ }
+    } catch {}
 
-    // Reaplicar semáforo con cálculo real y emitir cambios (coherencia inmediata tras transición)
     try {
-      const res = await applyAndEmitSemaforo(pedidoId);
-      const color = (res as any)?.color;
-      if (newEstado !== 'ENTREGADO' && color === 'ROJO') {
-        try { await maybeReassignIfEnabled(pedidoId, 'ROJO'); } catch { }
+      const result = await applyAndEmitSemaforo(pedidoId);
+      if (newEstado !== 'ENTREGADO' && result?.color === 'ROJO') {
+        try {
+          await maybeReassignIfEnabled(pedidoId, 'ROJO');
+        } catch {}
       }
-    } catch (_) { /* ignore */ }
+    } catch {}
 
-    // Notificación informativa de cambio de estado
     try {
       const copy = estadoCopy[newEstado] ?? { title: 'Estado del pedido', body: `Estado actualizado a ${newEstado}` };
       await ClientNotificationService.createNotification({
@@ -259,10 +239,11 @@ export async function transitionEstado(
         tipo: 'INFO',
         title: copy.title,
       });
-    } catch (_) { /* ignore */ }
+    } catch {}
 
-    // Emitir snapshot final de la tarjeta tras side-effects (semaforo/ETA/reasignación).
-    try { await emitKanbanPedidoUpsert(pedidoId, prevEstado, 'post_side_effects'); } catch { }
+    try {
+      await emitKanbanPedidoUpsert(pedidoId, prevEstado, 'post_side_effects');
+    } catch {}
   };
 
   if (opts.backgroundSideEffects !== false) {

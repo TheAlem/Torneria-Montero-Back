@@ -10,6 +10,7 @@ import * as ClientNotificationService from '../services/ClientNotificationServic
 import { recalcPedidoEstimate } from '../services/MLService.js';
 import { buildDetalleFromPayload, buildNotasFromDetalle, normalizeDetalleTrabajo } from '../services/PedidoDetails.js';
 import { scheduleEvaluatePedidos } from '../services/KanbanMonitorService.js';
+import { computeSemaforoForPedido } from '../services/SemaforoService.js';
 import { clearReportCache } from './reportes.js';
 
 const enrichPedidoDetalle = (pedido: any) => {
@@ -114,7 +115,9 @@ export const getById = async (req: Request, res: Response, next: NextFunction) =
       auto_update_eta_enabled: String(process.env.ETA_AUTO_UPDATE_ENABLED ?? 'false').toLowerCase() === 'true',
     };
     const pedidoOut = enrichPedidoDetalle(pedido as any);
-    return success(res, { ...pedidoOut, eta_tracking: etaTracking });
+    let lastSemaforo: any = null;
+    try { lastSemaforo = await computeSemaforoForPedido(id); } catch {}
+    return success(res, { ...pedidoOut, semaforo: lastSemaforo?.color ?? pedidoOut.semaforo, lastSemaforo, eta_tracking: etaTracking });
   } catch (err) { next(err); }
 };
 

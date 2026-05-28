@@ -4,171 +4,176 @@ import { parseDescripcion, computeComplexityScore } from './ml/features.js';
 import RealtimeService from '../realtime/RealtimeService.js';
 import ClientNotificationService from './ClientNotificationService.js';
 import { getEffectiveDueDate } from './dueDates.js';
+import { businessSecondsBetween, getWorkerSchedule } from './WorkCalendarService.js';
+
+export { businessSecondsBetween, getWorkerSchedule };
 
 export type SemaforoColor = 'VERDE' | 'AMARILLO' | 'ROJO';
+export type SemaforoDecisionStatus = 'SIN_DATOS' | 'A_TIEMPO' | 'ATENCION' | 'RIESGO' | 'VENCIDO' | 'ENTREGADO';
 
-// Configuración de jornada laboral (por defecto 08:00-12:00 y 13:00-17:00, lun-sáb)
-const WORK_DAYS = process.env.WORKDAYS || '1-6'; // 0=domingo ... 6=sábado; default lun-sab
-const WORKDAY_SHIFTS_STR = process.env.WORKDAY_SHIFTS || '08:00-12:00,13:00-17:00';
-const WORKDAY_SHIFTS_SAT = process.env.WORKDAY_SHIFTS_SAT; // opcional, ej. "08:00-12:00"
-const MAX_DAILY_WORK_MINUTES = Math.max(
-  60,
-  Math.min(24 * 60, Math.round((Number(process.env.WORKER_MAX_DAILY_HOURS ?? 8) || 8) * 60))
-);
-
-const parseHHMM = (v: string): { h: number; m: number } => {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(v || '');
-  if (!m) return { h: 8, m: 0 };
-  const h = Math.min(23, Math.max(0, Number(m[1])));
-  const mm = Math.min(59, Math.max(0, Number(m[2])));
-  return { h, m: mm };
+export type SemaforoDecision = {
+  status: SemaforoDecisionStatus;
+  label: string;
+  reason: string;
+  notify: boolean;
 };
 
-type Shift = { startMin: number; endMin: number };
-const capShiftsToDailyLimit = (shifts: Shift[]): Shift[] => {
-  const ordered = [...shifts].sort((a, b) => a.startMin - b.startMin);
-  const out: Shift[] = [];
-  let remaining = MAX_DAILY_WORK_MINUTES;
-  for (const sh of ordered) {
-    if (remaining <= 0) break;
-    const len = sh.endMin - sh.startMin;
-    if (len <= 0) continue;
-    if (len <= remaining) {
-      out.push(sh);
-      remaining -= len;
-      continue;
-    }
-    out.push({ startMin: sh.startMin, endMin: sh.startMin + remaining });
-    remaining = 0;
-  }
-  return out;
+export type SemaforoMetrics = {
+  color: SemaforoColor;
+  tRealSec: number;
+  tEstimadoSec: number;
+  tRestanteSec: number;
+  slackSec: number;
+  marginSec: number;
+  ratio: number;
+  ratioAdjusted: number;
+  complexityScore: number;
+  loadRatio: number;
+  effectiveDueAt: string | null;
+  thresholds: {
+    yellow: number;
+    red: number;
+    redGraceSec: number;
+    attentionMarginSec: number;
+  };
+  decision: SemaforoDecision;
+  ml: {
+    baseSec: number;
+    adjustedSec: number;
+    interval: { minSec: number; maxSec: number; bufferPct: number };
+    modelVersion: string;
+    source: string;
+  } | null;
+  heuristics: {
+    reasons: string[];
+    complexityScore: number;
+    loadRatio: number;
+  };
 };
-
-const parseShifts = (raw: string): Shift[] => {
-  const out: Shift[] = [];
-  const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
-  for (const p of parts) {
-    const [s, e] = p.split('-').map(x => (x || '').trim());
-    if (!s || !e) continue;
-    const sh = parseHHMM(s);
-    const eh = parseHHMM(e);
-    const startMin = sh.h * 60 + sh.m;
-    const endMin = eh.h * 60 + eh.m;
-    if (endMin > startMin) out.push({ startMin, endMin });
-  }
-  const capped = capShiftsToDailyLimit(out);
-  if (!capped.length) {
-    // fallback single shift 08:00-16:00 (8h)
-    return [{ startMin: 8 * 60, endMin: 16 * 60 }];
-  }
-  return capped;
-};
-
-const globalShifts = parseShifts(WORKDAY_SHIFTS_STR);
-const saturdayShifts = WORKDAY_SHIFTS_SAT ? parseShifts(WORKDAY_SHIFTS_SAT) : parseShifts('08:00-12:00');
-
-const workdaysSet = (() => {
-  const parts = WORK_DAYS.split(',').map(p => p.trim()).filter(Boolean);
-  const set = new Set<number>();
-  for (const p of parts) {
-    if (p.includes('-')) {
-      const [a, b] = p.split('-').map(n => Number(n));
-      if (Number.isFinite(a) && Number.isFinite(b)) {
-        const start = Math.max(0, Math.min(6, a));
-        const end = Math.max(0, Math.min(6, b));
-        for (let d = start; d <= end; d++) set.add(d);
-      }
-    } else {
-      const n = Number(p);
-      if (Number.isFinite(n)) set.add(Math.max(0, Math.min(6, n)));
-    }
-  }
-  if (!set.size) for (let d = 1; d <= 6; d++) set.add(d); // fallback lun-sab
-  return set;
-})();
-
-function isWorkDay(d: Date) {
-  return workdaysSet.has(d.getDay());
-}
-
-function getShiftsForDay(dayIdx: number, customShifts?: Shift[], customWorkdays?: Set<number>): Shift[] {
-  const wd = customWorkdays || workdaysSet;
-  if (!wd.has(dayIdx)) return [];
-  if (customShifts && customShifts.length) return customShifts; // Si es custom, usamos el mismo para todos los días laborales (simplificación)
-  if (dayIdx === 6 && saturdayShifts.length) return saturdayShifts; // sábado default
-  return globalShifts;
-}
-
-export async function getWorkerSchedule(workerId: number): Promise<{ shifts: Shift[]; workdays?: Set<number> } | null> {
-  try {
-    const w = await prisma.trabajadores.findUnique({ where: { id: workerId }, select: { disponibilidad: true } });
-    if (!w || !w.disponibilidad) return null;
-    // Asumimos formato simple en disponibilidad: { "shifts": ["08:00-12:00", "13:00-17:00"], "days": [1,2,3,4,5] }
-    const disp = w.disponibilidad as any;
-    const shifts = disp.shifts && Array.isArray(disp.shifts) ? parseShifts(disp.shifts.join(',')) : [];
-    const workdays = disp.days && Array.isArray(disp.days) ? new Set<number>(disp.days) : undefined;
-
-    if (shifts.length > 0) return { shifts, workdays };
-    return null;
-  } catch (e) {
-    return null;
-  }
-}
-
-/**
- * Calcula segundos laborables entre dos fechas, considerando jornada (múltiples tramos) y días hábiles.
- * No asume 24/7 para evitar sobreestimar atraso/ETA. Usa la configuración global.
- */
-export function businessSecondsBetween(start: Date, end: Date, customShifts?: Shift[], customWorkdays?: Set<number>): number {
-  if (!start || !end || end <= start) return 0;
-  let total = 0;
-  let cursor = new Date(start);
-  let guard = 0;
-
-  while (cursor < end && guard < 370) { // guarda de ~1 año para evitar loops
-    const shifts = getShiftsForDay(cursor.getDay(), customShifts, customWorkdays);
-    if (shifts.length) {
-      const dayStart = new Date(cursor);
-      dayStart.setHours(0, 0, 0, 0);
-      for (const sh of shifts) {
-        const wStart = new Date(dayStart.getTime() + sh.startMin * 60000);
-        const wEnd = new Date(dayStart.getTime() + sh.endMin * 60000);
-        const from = cursor > wStart ? cursor : wStart;
-        const to = end < wEnd ? end : wEnd;
-        if (to > from) total += Math.round((to.getTime() - from.getTime()) / 1000);
-      }
-    }
-    // siguiente día al inicio de la primera jornada
-    cursor = new Date(cursor);
-    cursor.setDate(cursor.getDate() + 1);
-    const nextShifts = getShiftsForDay(cursor.getDay(), customShifts, customWorkdays);
-    const first = nextShifts.length ? nextShifts[0] : (customShifts && customShifts.length ? customShifts[0] : globalShifts[0]);
-    cursor.setHours(Math.floor(first.startMin / 60), first.startMin % 60, 0, 0);
-    guard++;
-  }
-  return total;
-}
 
 function getThresholds(prioridad: 'ALTA' | 'MEDIA' | 'BAJA'): { yellow: number; red: number } {
-  const baseYellow = Number(process.env.SEMAFORO_RATIO_YELLOW || 0.7);
-  const baseRed = Number(process.env.SEMAFORO_RATIO_RED || 1.0);
+  const baseYellow = Number(process.env.SEMAFORO_RATIO_YELLOW ?? 0.75);
+  const baseRed = Number(process.env.SEMAFORO_RATIO_RED ?? 1.05);
   if (prioridad === 'ALTA') {
-    const y = Number(process.env.SEMAFORO_RATIO_YELLOW_HIGH || 0.6);
-    const r = Number(process.env.SEMAFORO_RATIO_RED_HIGH || 0.9);
-    return { yellow: y, red: r };
+    return {
+      yellow: Number(process.env.SEMAFORO_RATIO_YELLOW_HIGH ?? 0.65),
+      red: Number(process.env.SEMAFORO_RATIO_RED_HIGH ?? 1.02),
+    };
   }
   return { yellow: baseYellow, red: baseRed };
 }
 
+const emptyMetrics = (decision: SemaforoDecision, color: SemaforoColor = 'VERDE'): SemaforoMetrics => ({
+  color,
+  tRealSec: 0,
+  tEstimadoSec: 0,
+  tRestanteSec: 0,
+  slackSec: 0,
+  marginSec: 0,
+  ratio: 0,
+  ratioAdjusted: 0,
+  complexityScore: 0,
+  loadRatio: 0,
+  effectiveDueAt: null,
+  thresholds: {
+    yellow: 0,
+    red: 0,
+    redGraceSec: 0,
+    attentionMarginSec: 0,
+  },
+  decision,
+  ml: null,
+  heuristics: {
+    reasons: [],
+    complexityScore: 0,
+    loadRatio: 0,
+  },
+});
+
+export function decideSemaforoStatus(input: {
+  estado?: string | null;
+  hasDueDate: boolean;
+  hasResponsable: boolean;
+  slackSec: number;
+  marginSec: number;
+  ratioAdjusted: number;
+  yellowThreshold: number;
+  redThreshold: number;
+  redGraceSec: number;
+  attentionMarginSec: number;
+}): { color: SemaforoColor; decision: SemaforoDecision } {
+  const estado = String(input.estado || '').toUpperCase();
+  if (estado === 'ENTREGADO') {
+    return {
+      color: 'VERDE',
+      decision: { status: 'ENTREGADO', label: 'Entregado', reason: 'Trabajo terminado.', notify: false },
+    };
+  }
+
+  if (!input.hasDueDate) {
+    return {
+      color: 'VERDE',
+      decision: { status: 'SIN_DATOS', label: 'Sin fecha', reason: 'Falta fecha de entrega para evaluar el margen.', notify: false },
+    };
+  }
+
+  if (!input.hasResponsable) {
+    return {
+      color: 'AMARILLO',
+      decision: { status: 'ATENCION', label: 'Sin responsable', reason: 'Falta responsable para calcular segun su jornada.', notify: false },
+    };
+  }
+
+  if (input.slackSec <= 0) {
+    return {
+      color: 'ROJO',
+      decision: { status: 'VENCIDO', label: 'Vencido', reason: 'Ya paso la hora efectiva de entrega.', notify: true },
+    };
+  }
+
+  if (input.marginSec < -input.redGraceSec) {
+    return {
+      color: 'ROJO',
+      decision: { status: 'RIESGO', label: 'Riesgo alto', reason: 'El trabajo restante supera el margen laboral disponible.', notify: true },
+    };
+  }
+
+  if (input.marginSec < 0) {
+    return {
+      color: 'AMARILLO',
+      decision: { status: 'ATENCION', label: 'Margen ajustado', reason: 'Puede llegar, pero esta dentro de la tolerancia operativa.', notify: false },
+    };
+  }
+
+  if (input.ratioAdjusted >= input.redThreshold && input.marginSec <= input.attentionMarginSec) {
+    return {
+      color: 'AMARILLO',
+      decision: { status: 'ATENCION', label: 'Muy justo', reason: 'El margen existe, pero carga y complejidad lo vuelven ajustado.', notify: false },
+    };
+  }
+
+  if (input.ratioAdjusted >= input.yellowThreshold || input.marginSec <= input.attentionMarginSec) {
+    return {
+      color: 'AMARILLO',
+      decision: { status: 'ATENCION', label: 'Atencion', reason: 'Conviene vigilar el pedido por margen o carga del trabajador.', notify: false },
+    };
+  }
+
+  return {
+    color: 'VERDE',
+    decision: { status: 'A_TIEMPO', label: 'A tiempo', reason: 'El tiempo laboral disponible cubre el trabajo restante.', notify: false },
+  };
+}
+
 export async function getTiempoRealSec(pedidoId: number): Promise<number> {
-  const now = Date.now();
+  const now = new Date();
   const registros = await prisma.tiempos.findMany({
     where: { pedido_id: pedidoId },
     orderBy: { id: 'asc' },
-    select: { duracion_sec: true, estado: true, inicio: true, fin: true, trabajador_id: true }
+    select: { duracion_sec: true, estado: true, inicio: true, fin: true, trabajador_id: true },
   });
 
-  const scheduleCache = new Map<number, { shifts: Shift[]; workdays?: Set<number> } | null>();
+  const scheduleCache = new Map<number, Awaited<ReturnType<typeof getWorkerSchedule>>>();
   const getScheduleCached = async (workerId: number) => {
     if (!scheduleCache.has(workerId)) {
       scheduleCache.set(workerId, await getWorkerSchedule(workerId));
@@ -177,55 +182,69 @@ export async function getTiempoRealSec(pedidoId: number): Promise<number> {
   };
 
   let cerrados = 0;
-  for (const r of registros) {
-    if (r.estado !== 'CERRADO') continue;
-    if (r.inicio && r.fin) {
-      const schedule = await getScheduleCached(r.trabajador_id);
-      cerrados += businessSecondsBetween(new Date(r.inicio), new Date(r.fin), schedule?.shifts, schedule?.workdays);
+  for (const registro of registros) {
+    if (registro.estado !== 'CERRADO') continue;
+    if (registro.inicio && registro.fin) {
+      const schedule = await getScheduleCached(registro.trabajador_id);
+      cerrados += businessSecondsBetween(new Date(registro.inicio), new Date(registro.fin), schedule?.shifts, schedule?.workdays);
       continue;
     }
-    if (typeof r.duracion_sec === 'number' && Number.isFinite(r.duracion_sec)) {
-      cerrados += Math.max(0, r.duracion_sec || 0);
+    if (typeof registro.duracion_sec === 'number' && Number.isFinite(registro.duracion_sec)) {
+      cerrados += Math.max(0, registro.duracion_sec || 0);
     }
   }
 
-  // Para el abierto, calculamos usando el horario del trabajador
-  const abierto = registros.find(r => r.estado === 'ABIERTO');
+  const abierto = registros.find((registro) => registro.estado === 'ABIERTO');
   let abiertoSec = 0;
-  if (abierto && abierto.inicio) {
-    const workerSchedule = await getWorkerSchedule(abierto.trabajador_id);
-    abiertoSec = businessSecondsBetween(new Date(abierto.inicio), new Date(now), workerSchedule?.shifts, workerSchedule?.workdays);
+  if (abierto?.inicio) {
+    const schedule = await getScheduleCached(abierto.trabajador_id);
+    abiertoSec = businessSecondsBetween(new Date(abierto.inicio), now, schedule?.shifts, schedule?.workdays);
   }
 
   return cerrados + abiertoSec;
 }
 
-export async function computeSemaforoForPedido(pedidoId: number): Promise<{
-  color: SemaforoColor;
-  tRealSec: number;
-  tEstimadoSec: number;
-  slackSec: number;
-  ratio: number;
-  ratioAdjusted: number;
-  complexityScore: number;
-  loadRatio: number;
-}> {
-  const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId }, select: { fecha_estimada_fin: true, prioridad: true, responsable_id: true, descripcion: true } });
-  if (!pedido || !pedido.fecha_estimada_fin) {
-    return { color: 'VERDE', tRealSec: 0, tEstimadoSec: 0, slackSec: Number.MAX_SAFE_INTEGER, ratio: 0, ratioAdjusted: 0, complexityScore: 0, loadRatio: 0 };
+export async function computeSemaforoForPedido(pedidoId: number): Promise<SemaforoMetrics> {
+  const pedido = await prisma.pedidos.findUnique({
+    where: { id: pedidoId },
+    select: {
+      estado: true,
+      fecha_estimada_fin: true,
+      prioridad: true,
+      responsable_id: true,
+      descripcion: true,
+    },
+  });
+
+  if (!pedido) {
+    return emptyMetrics({ status: 'SIN_DATOS', label: 'Sin datos', reason: 'Pedido no encontrado.', notify: false });
   }
 
-  const tRealSec = await getTiempoRealSec(pedidoId);
-  const responsableId = pedido.responsable_id ?? 0;
-  const estim = await predictTiempoSecHybridDetailed(pedidoId, responsableId);
-  const tEstimadoSec = estim.adjustedSec;
-  const tRestanteSec = Math.max(0, tEstimadoSec - tRealSec);
+  if (String(pedido.estado).toUpperCase() === 'ENTREGADO') {
+    return emptyMetrics({ status: 'ENTREGADO', label: 'Entregado', reason: 'Trabajo terminado.', notify: false });
+  }
+
+  if (!pedido.fecha_estimada_fin) {
+    return emptyMetrics({ status: 'SIN_DATOS', label: 'Sin fecha', reason: 'Falta fecha de entrega para evaluar el margen.', notify: false });
+  }
+
+  const responsableId = pedido.responsable_id ?? null;
   const schedule = responsableId ? await getWorkerSchedule(responsableId) : null;
   const effectiveDueAt = getEffectiveDueDate(pedido.fecha_estimada_fin, schedule?.shifts);
-  const slackSec = effectiveDueAt
-    ? businessSecondsBetween(new Date(), effectiveDueAt, schedule?.shifts, schedule?.workdays)
-    : 0;
-  const ratio = slackSec > 0 ? (tRestanteSec / slackSec) : Number.POSITIVE_INFINITY;
+  if (!effectiveDueAt) {
+    return emptyMetrics({ status: 'SIN_DATOS', label: 'Sin fecha', reason: 'La fecha de entrega no es valida.', notify: false });
+  }
+
+  const [tRealSec, estim] = await Promise.all([
+    getTiempoRealSec(pedidoId),
+    predictTiempoSecHybridDetailed(pedidoId, responsableId ?? 0),
+  ]);
+
+  const tEstimadoSec = estim.adjustedSec;
+  const tRestanteSec = Math.max(0, tEstimadoSec - tRealSec);
+  const slackSec = businessSecondsBetween(new Date(), effectiveDueAt, schedule?.shifts, schedule?.workdays);
+  const marginSec = slackSec - tRestanteSec;
+  const ratio = slackSec > 0 ? tRestanteSec / slackSec : Number.POSITIVE_INFINITY;
 
   const parsed = parseDescripcion(pedido.descripcion ?? '');
   const complexityScore = computeComplexityScore(parsed);
@@ -235,52 +254,105 @@ export async function computeSemaforoForPedido(pedidoId: number): Promise<{
     : 0;
   const wipMax = Math.max(1, Number(process.env.WIP_MAX || 5));
   const loadRatio = Math.min(1, wipActual / wipMax);
-  const ratioAdjusted = ratio * (1 + (complexityScore * 0.25) + (loadRatio * 0.15));
+  const ratioAdjusted = ratio * (1 + complexityScore * 0.25 + loadRatio * 0.15);
+  const thresholds = getThresholds(pedido.prioridad as any);
+  const redGraceSec = Math.max(0, Number(process.env.SEMAFORO_RED_GRACE_MINUTES ?? 15) * 60);
+  const attentionMarginSec = Math.max(0, Number(process.env.SEMAFORO_ATTENTION_MARGIN_MINUTES ?? 30) * 60);
+  const { color, decision } = decideSemaforoStatus({
+    estado: pedido.estado,
+    hasDueDate: true,
+    hasResponsable: Boolean(responsableId),
+    slackSec,
+    marginSec,
+    ratioAdjusted,
+    yellowThreshold: thresholds.yellow,
+    redThreshold: thresholds.red,
+    redGraceSec,
+    attentionMarginSec,
+  });
 
-  // Nueva regla: ROJO si ya no alcanza el tiempo (slack <= 0 o tRestante >= slack).
-  if (slackSec <= 0 || tRestanteSec >= slackSec) {
-    return { color: 'ROJO', tRealSec, tEstimadoSec, slackSec, ratio, ratioAdjusted, complexityScore, loadRatio };
-  }
-
-  // AMARILLO como advertencia cuando el remanente consume gran parte del margen (por defecto 80% o env).
-  const warnRatio = Number(process.env.SEMAFORO_RATIO_YELLOW ?? getThresholds(pedido.prioridad as any).yellow ?? 0.8);
-  const color: SemaforoColor = ratioAdjusted >= warnRatio ? 'AMARILLO' : 'VERDE';
-  return { color, tRealSec, tEstimadoSec, slackSec, ratio, ratioAdjusted, complexityScore, loadRatio };
+  return {
+    color,
+    tRealSec,
+    tEstimadoSec,
+    tRestanteSec,
+    slackSec,
+    marginSec,
+    ratio,
+    ratioAdjusted,
+    complexityScore,
+    loadRatio,
+    effectiveDueAt: effectiveDueAt.toISOString(),
+    thresholds: {
+      yellow: thresholds.yellow,
+      red: thresholds.red,
+      redGraceSec,
+      attentionMarginSec,
+    },
+    decision,
+    ml: {
+      baseSec: estim.baseSec,
+      adjustedSec: estim.adjustedSec,
+      interval: estim.interval,
+      modelVersion: estim.modelVersion,
+      source: estim.source,
+    },
+    heuristics: {
+      reasons: estim.reasons,
+      complexityScore,
+      loadRatio,
+    },
+  };
 }
 
-export async function applyAndEmitSemaforo(pedidoId: number) {
+export async function applyAndEmitSemaforo(
+  pedidoId: number,
+): Promise<(SemaforoMetrics & { changed: boolean; prev?: SemaforoColor }) | null> {
   const pedido = await prisma.pedidos.findUnique({ where: { id: pedidoId }, include: { cliente: true } });
-  if (!pedido) return { changed: false };
-  const { color, tRealSec, tEstimadoSec, slackSec, ratio, ratioAdjusted, complexityScore, loadRatio } = await computeSemaforoForPedido(pedidoId);
+  if (!pedido) return null;
+
+  const metrics = await computeSemaforoForPedido(pedidoId);
   const prev = pedido.semaforo as SemaforoColor;
+  const color = metrics.color;
+
   if (prev !== color) {
-    await prisma.pedidos.update({ where: { id: pedidoId }, data: { semaforo: color } }).catch(() => { });
-    try {
-      RealtimeService.emitToOperators('kanban:semaforo-changed', { pedidoId, semaforo: color, tRealSec, tEstimadoSec, slackSec, ratio, ratioAdjusted, complexityScore, loadRatio });
-      if (color === 'ROJO') {
-        RealtimeService.emitWebAlert('RETRASO', `Pedido #${pedidoId} en riesgo (ROJO)`, { pedidoId, ratio, ratioAdjusted, complexityScore, loadRatio });
-        // Notificación al cliente (throttle por DB + SSE ya tienen anti-spam)
-        try {
-          const cutoff = new Date(Date.now() - 30 * 60 * 1000);
-          const recent = await prisma.notificaciones.findFirst({
-            where: { pedido_id: pedidoId, tipo: 'ALERTA', fecha_creacion: { gte: cutoff } },
-            orderBy: { id: 'desc' }
-          });
-          if (!recent) {
-            await ClientNotificationService.createNotification({
-              pedidoId,
-              clienteId: pedido.cliente_id,
-              mensaje: 'Tu pedido podria retrasarse. Estamos ajustando la planificacion.',
-              tipo: 'ALERTA',
-              title: 'Riesgo de retraso',
-            });
-          }
-        } catch { }
-      }
-    } catch { }
-    return { changed: true, prev, color, tRealSec, tEstimadoSec, slackSec, ratio };
+    await prisma.pedidos.update({ where: { id: pedidoId }, data: { semaforo: color } }).catch(() => {});
   }
-  return { changed: false, prev, color, tRealSec, tEstimadoSec, slackSec, ratio } as any;
+
+  try {
+    if (prev !== color) {
+      RealtimeService.emitToOperators('kanban:semaforo-changed', { pedidoId, semaforo: color, ...metrics });
+    }
+
+    if (color === 'ROJO' && metrics.decision.notify) {
+      RealtimeService.emitWebAlert('RETRASO', `Pedido #${pedidoId} en riesgo (${metrics.decision.label})`, {
+        pedidoId,
+        ratio: metrics.ratio,
+        ratioAdjusted: metrics.ratioAdjusted,
+        marginSec: metrics.marginSec,
+        decision: metrics.decision,
+      });
+
+      try {
+        const cutoff = new Date(Date.now() - 30 * 60 * 1000);
+        const recent = await prisma.notificaciones.findFirst({
+          where: { pedido_id: pedidoId, tipo: 'ALERTA', fecha_creacion: { gte: cutoff } },
+          orderBy: { id: 'desc' },
+        });
+        if (!recent) {
+          await ClientNotificationService.createNotification({
+            pedidoId,
+            clienteId: pedido.cliente_id,
+            mensaje: 'Tu pedido podria retrasarse. Estamos ajustando la planificacion.',
+            tipo: 'ALERTA',
+            title: 'Riesgo de retraso',
+          });
+        }
+      } catch {}
+    }
+  } catch {}
+
+  return { changed: prev !== color, prev, ...metrics };
 }
 
 export default { computeSemaforoForPedido, applyAndEmitSemaforo, getTiempoRealSec, businessSecondsBetween, getWorkerSchedule };
